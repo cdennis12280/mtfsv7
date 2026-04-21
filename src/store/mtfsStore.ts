@@ -166,6 +166,9 @@ const DEFAULT_PEER_BENCHMARK: PeerBenchmarkConfig = {
   peerMedianReservesToBudget: 8,
   peerMedianGapPct: 1.5,
   peerUpperRiskScore: 55,
+  peerNetExpenditurePerCapita: 1650,
+  peerSavingsDeliveryRate: 82,
+  peerDebtToNetRevenue: 145,
   sourceLabel: 'User-entered benchmark',
 };
 
@@ -210,7 +213,7 @@ function coerceSnapshotLike(input: unknown): ModelSnapshot | null {
     assumptions: candidate.assumptions,
     baseline: candidate.baseline,
     savingsProposals: candidate.savingsProposals || [],
-    authorityConfig: candidate.authorityConfig || DEFAULT_AUTHORITY_CONFIG,
+    authorityConfig: { ...DEFAULT_AUTHORITY_CONFIG, ...(candidate.authorityConfig || {}) },
     scenarios: candidate.scenarios || [],
     metadata: {
       appVersion: candidate.metadata?.appVersion || 'v7.0',

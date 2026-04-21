@@ -23,7 +23,7 @@ const RISK_COLORS: Record<string, string> = {
 };
 
 export function RiskAssessment() {
-  const { result, assumptions, baseline, savingsProposals, peerBenchmark, setPeerBenchmark } = useMTFSStore();
+  const { result, assumptions, baseline, savingsProposals, peerBenchmark, setPeerBenchmark, authorityConfig } = useMTFSStore();
   const { riskFactors, overallRiskScore, years } = result;
 
   const radarData = riskFactors.map((f) => ({
@@ -39,6 +39,18 @@ export function RiskAssessment() {
 
   const overallLevel = overallRiskScore >= 65 ? 'critical' : overallRiskScore >= 45 ? 'high' : overallRiskScore >= 25 ? 'medium' : 'low';
   const overallColor = RISK_COLORS[overallLevel];
+  const population = Math.max(1, authorityConfig.population || 1);
+  const year5 = years[4] ?? years[years.length - 1];
+  const currentNetExpPerCapita = year5 ? (year5.totalExpenditure * 1000) / population : 0;
+  const currentSavingsDeliveryRate = Math.max(0, Math.min(100, assumptions.expenditure.savingsDeliveryRisk));
+  const debtToRevenuePct = baseline?.treasuryIndicators.enabled
+    ? ((baseline.treasuryIndicators.netFinancingNeed / Math.max(1, year5?.totalFunding ?? 1)) * 100)
+    : 0;
+  const debtBurdenLevel = debtToRevenuePct > 170 ? 'critical' : debtToRevenuePct > 140 ? 'warning' : 'good';
+  const liquidityHeadroomPct = baseline?.treasuryIndicators.enabled
+    ? (((baseline.treasuryIndicators.operationalBoundary - baseline.treasuryIndicators.netFinancingNeed) / Math.max(1, baseline.treasuryIndicators.operationalBoundary)) * 100)
+    : 0;
+  const liquidityLevel = liquidityHeadroomPct < 0 ? 'critical' : liquidityHeadroomPct < 8 ? 'warning' : 'good';
 
   const sustainabilityChecks = [
     {
@@ -299,12 +311,12 @@ export function RiskAssessment() {
               <input type="checkbox" checked={peerBenchmark.enabled} onChange={(e) => setPeerBenchmark({ enabled: e.target.checked })} />
               Enable peer overlays
             </label>
-            <input
-              className="input"
-              value={peerBenchmark.sourceLabel}
-              onChange={(e) => setPeerBenchmark({ sourceLabel: e.target.value })}
-              placeholder="Benchmark source label"
-            />
+              <input
+                className="input"
+                value={peerBenchmark.sourceLabel}
+                onChange={(e) => setPeerBenchmark({ sourceLabel: e.target.value })}
+                placeholder="Benchmark source label"
+              />
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <p className="text-[10px] text-[#4a6080] mb-1">Peer Median Reserves %</p>
@@ -319,6 +331,20 @@ export function RiskAssessment() {
                 <input className="input" type="number" value={peerBenchmark.peerUpperRiskScore} onChange={(e) => setPeerBenchmark({ peerUpperRiskScore: Number(e.target.value) || 0 })} />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <p className="text-[10px] text-[#4a6080] mb-1">Peer Net Exp £/Cap</p>
+                <input className="input" type="number" value={peerBenchmark.peerNetExpenditurePerCapita} onChange={(e) => setPeerBenchmark({ peerNetExpenditurePerCapita: Number(e.target.value) || 0 })} />
+              </div>
+              <div>
+                <p className="text-[10px] text-[#4a6080] mb-1">Peer Savings Delivery %</p>
+                <input className="input" type="number" value={peerBenchmark.peerSavingsDeliveryRate} onChange={(e) => setPeerBenchmark({ peerSavingsDeliveryRate: Number(e.target.value) || 0 })} />
+              </div>
+              <div>
+                <p className="text-[10px] text-[#4a6080] mb-1">Peer Debt/Revenue %</p>
+                <input className="input" type="number" value={peerBenchmark.peerDebtToNetRevenue} onChange={(e) => setPeerBenchmark({ peerDebtToNetRevenue: Number(e.target.value) || 0 })} />
+              </div>
+            </div>
             <div className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.1)] p-2.5">
               <p className="text-[10px] text-[#8ca0c0]">{peerBenchmark.sourceLabel || 'Benchmark source'}</p>
               <p className="text-[10px] text-[#4a6080] mt-1">
@@ -327,10 +353,52 @@ export function RiskAssessment() {
               <p className="text-[10px] text-[#4a6080]">
                 Current risk {overallRiskScore.toFixed(0)} vs peer upper band {peerBenchmark.peerUpperRiskScore.toFixed(0)}
               </p>
+              <p className="text-[10px] text-[#4a6080]">
+                Net expenditure per capita £{currentNetExpPerCapita.toFixed(0)} vs peer £{peerBenchmark.peerNetExpenditurePerCapita.toFixed(0)}
+              </p>
+              <p className="text-[10px] text-[#4a6080]">
+                Savings delivery {currentSavingsDeliveryRate.toFixed(0)}% vs peer {peerBenchmark.peerSavingsDeliveryRate.toFixed(0)}%
+              </p>
+              <p className="text-[10px] text-[#4a6080]">
+                Debt burden {debtToRevenuePct.toFixed(1)}% vs peer {peerBenchmark.peerDebtToNetRevenue.toFixed(1)}%
+              </p>
             </div>
           </div>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Early Warning Indicators</CardTitle>
+          <span className="text-[10px] text-[#4a6080]">Liquidity and debt resilience</span>
+        </CardHeader>
+        <div className="grid grid-cols-4 gap-3">
+          <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
+            <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Reserve Depletion</p>
+            <p className={`mono text-[13px] font-bold mt-1 ${result.yearReservesExhausted ? 'text-[#ef4444]' : 'text-[#10b981]'}`}>
+              {result.yearReservesExhausted ?? 'No exhaustion in horizon'}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
+            <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Liquidity Headroom</p>
+            <p className={`mono text-[13px] font-bold mt-1 ${liquidityLevel === 'critical' ? 'text-[#ef4444]' : liquidityLevel === 'warning' ? 'text-[#f59e0b]' : 'text-[#10b981]'}`}>
+              {baseline?.treasuryIndicators.enabled ? `${liquidityHeadroomPct.toFixed(1)}%` : 'Not enabled'}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
+            <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Debt Burden</p>
+            <p className={`mono text-[13px] font-bold mt-1 ${debtBurdenLevel === 'critical' ? 'text-[#ef4444]' : debtBurdenLevel === 'warning' ? 'text-[#f59e0b]' : 'text-[#10b981]'}`}>
+              {baseline?.treasuryIndicators.enabled ? `${debtToRevenuePct.toFixed(1)}%` : 'Not enabled'}
+            </p>
+          </div>
+          <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
+            <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">s114 Indicator</p>
+            <p className={`mono text-[13px] font-bold mt-1 ${result.s114Triggered ? 'text-[#ef4444]' : 'text-[#10b981]'}`}>
+              {result.s114Triggered ? 'At risk' : 'No immediate trigger'}
+            </p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 }

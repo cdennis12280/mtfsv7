@@ -6,6 +6,10 @@ export interface AuthorityConfig {
   reportingPeriod: string;       // e.g. "2025/26 – 2029/30"
   reportDate: string;            // ISO date string
   authorityType: string;         // e.g. "Unitary Authority" | "County Council" | ...
+  population: number;            // resident population for per-capita context
+  strategicPriority1: string;    // e.g. "Protect vulnerable residents"
+  strategicPriority2: string;    // e.g. "Inclusive local growth"
+  strategicPriority3: string;    // e.g. "Neighbourhood and climate resilience"
 }
 
 // ─── Custom Service Lines (Items 3 & 6) ──────────────────────────────────────
@@ -423,6 +427,9 @@ export interface PeerBenchmarkConfig {
   peerMedianReservesToBudget: number; // %
   peerMedianGapPct: number; // % of annual funding
   peerUpperRiskScore: number; // 0-100
+  peerNetExpenditurePerCapita: number; // £ per resident
+  peerSavingsDeliveryRate: number; // %
+  peerDebtToNetRevenue: number; // %
   sourceLabel: string;
 }
 

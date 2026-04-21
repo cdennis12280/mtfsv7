@@ -36,14 +36,18 @@ function AuthorityConfigSection() {
             { label: 'Chief Executive', key: 'chiefExecutive' as const, placeholder: 'e.g. Chief Executive' },
             { label: 'Authority Type', key: 'authorityType' as const, placeholder: 'e.g. Unitary Authority' },
             { label: 'Reporting Period', key: 'reportingPeriod' as const, placeholder: 'e.g. 2025/26 – 2029/30' },
+            { label: 'Population', key: 'population' as const, placeholder: 'e.g. 320000' },
+            { label: 'Strategic Priority 1', key: 'strategicPriority1' as const, placeholder: 'e.g. Protect vulnerable residents' },
+            { label: 'Strategic Priority 2', key: 'strategicPriority2' as const, placeholder: 'e.g. Inclusive local growth' },
+            { label: 'Strategic Priority 3', key: 'strategicPriority3' as const, placeholder: 'e.g. Neighbourhood and climate resilience' },
           ].map(({ label, key, placeholder }) => (
             <div key={key}>
               <label className="text-[10px] text-[#4a6080] block mb-1">{label}</label>
               <input
-                type="text"
+                type={key === 'population' ? 'number' : 'text'}
                 value={authorityConfig[key]}
                 placeholder={placeholder}
-                onChange={(e) => setAuthorityConfig({ [key]: e.target.value })}
+                onChange={(e) => setAuthorityConfig({ [key]: key === 'population' ? Number(e.target.value) || 0 : e.target.value })}
                 title={`${label}: used in report branding and governance exports.`}
                 className="w-full bg-[#080c14] border border-[rgba(99,179,237,0.1)] rounded-lg px-2 py-1.5 text-[11px] text-[#f0f4ff] outline-none focus:border-[rgba(59,130,246,0.4)] placeholder:text-[#4a6080]"
               />

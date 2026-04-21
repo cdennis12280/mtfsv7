@@ -143,6 +143,10 @@ export const DEFAULT_AUTHORITY_CONFIG = {
   reportingPeriod: `${new Date().getFullYear()}/${String(new Date().getFullYear() + 1).slice(2)} – ${new Date().getFullYear() + 4}/${String(new Date().getFullYear() + 5).slice(2)}`,
   reportDate: new Date().toISOString().split('T')[0],
   authorityType: 'Unitary Authority',
+  population: 320_000,
+  strategicPriority1: 'Protect vulnerable residents',
+  strategicPriority2: 'Inclusive local growth',
+  strategicPriority3: 'Neighbourhood and climate resilience',
 };
 
 const YEARS = 5;

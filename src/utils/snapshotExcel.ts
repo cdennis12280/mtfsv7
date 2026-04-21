@@ -132,6 +132,10 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
     ['reportingPeriod', snapshot.authorityConfig.reportingPeriod],
     ['reportDate', snapshot.authorityConfig.reportDate],
     ['authorityType', snapshot.authorityConfig.authorityType],
+    ['population', snapshot.authorityConfig.population],
+    ['strategicPriority1', snapshot.authorityConfig.strategicPriority1],
+    ['strategicPriority2', snapshot.authorityConfig.strategicPriority2],
+    ['strategicPriority3', snapshot.authorityConfig.strategicPriority3],
   ];
 
   const a = snapshot.assumptions;
@@ -632,6 +636,10 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
     if (field === 'reportingPeriod') authorityConfig.reportingPeriod = toText(row.value, authorityConfig.reportingPeriod);
     if (field === 'reportDate') authorityConfig.reportDate = toText(row.value, authorityConfig.reportDate);
     if (field === 'authorityType') authorityConfig.authorityType = toText(row.value, authorityConfig.authorityType);
+    if (field === 'population') authorityConfig.population = toNumber(row.value, authorityConfig.population);
+    if (field === 'strategicPriority1') authorityConfig.strategicPriority1 = toText(row.value, authorityConfig.strategicPriority1);
+    if (field === 'strategicPriority2') authorityConfig.strategicPriority2 = toText(row.value, authorityConfig.strategicPriority2);
+    if (field === 'strategicPriority3') authorityConfig.strategicPriority3 = toText(row.value, authorityConfig.strategicPriority3);
   }
 
   const scenarios: Scenario[] = scenarioRows

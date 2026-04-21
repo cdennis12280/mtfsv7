@@ -9,6 +9,27 @@ function fmtK(v: number) {
   return `GBP ${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
+function getStrategicPriorities(authorityConfig: AuthorityConfig): string[] {
+  return [
+    authorityConfig.strategicPriority1,
+    authorityConfig.strategicPriority2,
+    authorityConfig.strategicPriority3,
+  ].map((p) => (p || '').trim()).filter(Boolean);
+}
+
+function buildPriorityLinks(result: MTFSResult, authorityConfig: AuthorityConfig): string[] {
+  const priorities = getStrategicPriorities(authorityConfig);
+  if (priorities.length === 0) return [];
+  return priorities.map((p, idx) => {
+    const hook = idx === 0
+      ? `Maintain service continuity while addressing ${fmtK(result.requiredSavingsToBalance)} annual action.`
+      : idx === 1
+        ? `Use recurring savings and income growth to support sustainable investment choices.`
+        : `Protect resilience by sustaining prudent reserves and avoiding one-off fixes for structural gaps.`;
+    return `${p}: ${hook}`;
+  });
+}
+
 function buildNarrativeReport(
   result: MTFSResult,
   assumptions: Assumptions,
@@ -121,6 +142,18 @@ function buildNarrativeReport(
     `  Custom Service Lines:      ${baseline.customServiceLines.length} additional lines`,
     `  Named Reserves:            ${baseline.namedReserves.length} named reserves`,
   );
+
+  const priorityLinks = buildPriorityLinks(result, authorityConfig);
+  if (priorityLinks.length > 0) {
+    lines.push(
+      '',
+      '-------------------------------------------------------------------------------',
+      '  SECTION 3A: STRATEGIC PRIORITY ALIGNMENT',
+      '-------------------------------------------------------------------------------',
+      '',
+    );
+    priorityLinks.forEach((l, i) => lines.push(`  ${i + 1}. ${l}`));
+  }
 
   if (savingsProposals.length > 0) {
     lines.push(
@@ -242,18 +275,21 @@ function buildOnePageMemberBrief(
     `- Year 5 closing reserves: ${fmtK(y5?.totalClosingReserves ?? 0)}`,
     `- Average annual action required: ${fmtK(result.requiredSavingsToBalance)}`,
     '',
-    '3) Key risks to watch',
+    '3) Strategic priorities linkage',
+    ...buildPriorityLinks(result, authorityConfig).map((p) => `- ${p}`),
+    '',
+    '4) Key risks to watch',
     ...result.riskFactors
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
       .map((r) => `- ${r.name}: ${r.score}/100 (${r.level})`),
     '',
-    '4) Immediate member decisions required',
+    '5) Immediate member decisions required',
     '- Confirm risk appetite and prudent reserves threshold.',
     '- Approve a credible recurring savings / income delivery plan.',
     '- Require quarterly MTFS monitoring and mitigation updates.',
     '',
-    '5) S151 assurance indicator',
+    '6) S151 assurance indicator',
     `- ${result.s114Triggered ? 'AT RISK: heightened statutory concern indicators triggered.' : 'No immediate statutory trigger under current tests.'}`,
   ];
   return lines.join('\n');
@@ -283,6 +319,9 @@ function buildPremiumMarkdownReport(
     `- Pay award: ${assumptions.expenditure.payAward.toFixed(1)}%`,
     `- ASC demand growth: ${assumptions.expenditure.ascDemandGrowth.toFixed(1)}%`,
     `- Savings delivery risk: ${assumptions.expenditure.savingsDeliveryRisk.toFixed(0)}%`,
+    '',
+    '## Strategic Priority Alignment',
+    ...buildPriorityLinks(result, authorityConfig).map((p) => `- ${p}`),
     '',
     '## Action Summary',
     `- Required annual action: **${fmtK(result.requiredSavingsToBalance)}**`,
@@ -454,7 +493,7 @@ export function GovernancePanel() {
             'Savings interactions and interdependencies between proposals are not modelled  -  complex programmes require manual adjustment.',
             'Demand growth is modelled as a uniform annual rate  -  actual demand may be step-change in nature (e.g. SEND placements, looked-after children).',
             'The model does not account for in-year monitoring variances, supplementary estimates, or virements.',
-            'Capital financing costs, MRP, and treasury management impacts are not yet incorporated (planned in roadmap).',
+            'Capital financing, MRP and treasury indicators are modelled, but should be calibrated with authority treasury strategy and prudential indicators.',
             'The Section 151 Officer must exercise professional judgement over all outputs. This tool provides decision support, not decision replacement.',
           ].map((lim, i) => (
             <div key={i} className="flex items-start gap-2 text-[10px] text-[#4a6080]">
