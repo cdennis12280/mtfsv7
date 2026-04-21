@@ -46,14 +46,23 @@ const CustomTooltip = ({ active, payload, label }: ChartTooltipProps) => {
 export function ReservesAnalysis() {
   const { result, baseline } = useMTFSStore();
   const { years } = result;
-  const minThreshold = (baseline || DEFAULT_BASELINE).reservesMinimumThreshold;
+  const safeBaseline = baseline || DEFAULT_BASELINE;
+  const useNamedReserves = safeBaseline.namedReserves.length > 0;
+  const openingGeneralFund = useNamedReserves
+    ? safeBaseline.namedReserves.filter((r) => !r.isEarmarked).reduce((sum, r) => sum + r.openingBalance, 0)
+    : safeBaseline.generalFundReserves;
+  const openingEarmarked = useNamedReserves
+    ? safeBaseline.namedReserves.filter((r) => r.isEarmarked).reduce((sum, r) => sum + r.openingBalance, 0)
+    : safeBaseline.earmarkedReserves;
+  const openingTotal = openingGeneralFund + openingEarmarked;
+  const minThreshold = result.effectiveMinimumReservesThreshold;
 
   const reservesData = [
     {
       year: 'Baseline',
-      'General Fund': Math.round((baseline || DEFAULT_BASELINE).generalFundReserves),
-      'Earmarked': Math.round((baseline || DEFAULT_BASELINE).earmarkedReserves),
-      Total: Math.round((baseline || DEFAULT_BASELINE).generalFundReserves + (baseline || DEFAULT_BASELINE).earmarkedReserves),
+      'General Fund': Math.round(openingGeneralFund),
+      'Earmarked': Math.round(openingEarmarked),
+      Total: Math.round(openingTotal),
     },
     ...years.map((y) => ({
       year: y.label,
@@ -72,8 +81,7 @@ export function ReservesAnalysis() {
   const lastYear = years[years.length - 1];
   const totalCloseReserves = lastYear?.totalClosingReserves ?? 0;
   const isBelow = totalCloseReserves < minThreshold;
-  const openingTotal = (baseline || DEFAULT_BASELINE).generalFundReserves + (baseline || DEFAULT_BASELINE).earmarkedReserves;
-  const depletionPct = ((openingTotal - totalCloseReserves) / openingTotal) * 100;
+  const depletionPct = openingTotal > 0 ? ((openingTotal - totalCloseReserves) / openingTotal) * 100 : 0;
 
   return (
     <div className="space-y-4">

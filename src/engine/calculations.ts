@@ -441,7 +441,9 @@ export function runCalculations(
   const baseNetBudget =
     baseline.councilTax + baseline.businessRates + baseline.coreGrants + baseline.feesAndCharges;
   const effectiveMinimumReservesThreshold =
-    baseline.reservesAdequacyMethodology.method === 'risk_based'
+    baseline.riskBasedReserves.enabled && baseline.riskBasedReserves.adoptAsMinimumThreshold
+      ? recommendedMinimumReserves
+      : baseline.reservesAdequacyMethodology.method === 'risk_based'
       ? recommendedMinimumReserves
       : baseline.reservesAdequacyMethodology.method === 'pct_of_net_budget'
         ? (baseNetBudget * baseline.reservesAdequacyMethodology.pctOfNetBudget) / 100
