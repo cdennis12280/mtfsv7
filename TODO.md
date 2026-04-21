@@ -223,8 +223,8 @@ RES-004: Reserves below minimum threshold flag considers total of all named rese
 ## Professionalisation Backlog (New Authority Readiness)
 
 ### Top Priorities Added
-- [ ] **P1** — Onboarding docs for new local authorities
-- [ ] **P2** — Quick start guide
+- [x] **P1** — Onboarding docs for new local authorities
+- [x] **P2** — Quick start guide
 
 ### Top 10 Other High-Value Actions
 - [ ] **P3** — Role-based access control (RBAC) for finance, analyst, and read-only users
