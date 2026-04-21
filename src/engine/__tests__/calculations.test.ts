@@ -34,6 +34,22 @@ describe('calculation engine', () => {
 
     expect(stressed.totalGap).toBeGreaterThan(base.totalGap);
   });
+
+  it('planned reserves usage caps annual drawdown when set', () => {
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.policy.reservesUsage = 500;
+
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.councilTax = 0;
+    baseline.businessRates = 0;
+    baseline.coreGrants = 0;
+    baseline.feesAndCharges = 0;
+
+    const result = runCalculations(assumptions, baseline, []);
+
+    expect(result.years.every((y) => y.reservesDrawdown <= 500)).toBe(true);
+    expect(result.years.some((y) => y.netGap > 0)).toBe(true);
+  });
 });
 
 describe('baseline csv parser', () => {
