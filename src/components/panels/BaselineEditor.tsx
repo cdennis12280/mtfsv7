@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Upload, Plus, Trash2, Info, ChevronDown, ChevronRight,
-  Database, AlertTriangle, CheckCircle, RefreshCw,
+  Database, AlertTriangle, CheckCircle, RefreshCw, Download,
 } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card } from '../ui/Card';
@@ -270,6 +270,106 @@ function CsvImportPanel() {
   const { importBaselinePartial } = useMTFSStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({ type: 'idle', message: '' });
+  const [isBuildingTemplate, setIsBuildingTemplate] = useState(false);
+
+  const downloadImportTemplate = async () => {
+    setIsBuildingTemplate(true);
+    try {
+      const { utils, write } = await import('xlsx');
+      const headers = [
+        'councilTax',
+        'businessRates',
+        'coreGrants',
+        'feesAndCharges',
+        'pay',
+        'nonPay',
+        'ascDemandLed',
+        'cscDemandLed',
+        'otherServiceExp',
+        'generalFundReserves',
+        'earmarkedReserves',
+        'reservesMinimumThreshold',
+      ];
+
+      const blankSheet = utils.aoa_to_sheet([
+        headers,
+        Array(headers.length).fill(''),
+      ]);
+
+      const exampleSheet = utils.aoa_to_sheet([
+        headers,
+        [52500, 38100, 27450, 13300, 118750, 49700, 30250, 17650, 14100, 18200, 31900, 12000],
+      ]);
+
+      const longFormatExampleSheet = utils.aoa_to_sheet([
+        ['lineName', '2026/27', '2027/28', '2028/29', '2029/30', '2030/31'],
+        ['councilTax', 52500, 55120, 57870, 60760, 63800],
+        ['businessRates', 38100, 38860, 39640, 40430, 41240],
+        ['coreGrants', 27450, 27720, 27990, 28270, 28550],
+        ['feesAndCharges', 13300, 13630, 13970, 14320, 14680],
+        ['pay', 118750, 122910, 127210, 131660, 136270],
+        ['nonPay', 49700, 51340, 53030, 54780, 56590],
+        ['ascDemandLed', 30250, 31570, 32950, 34390, 35890],
+        ['cscDemandLed', 17650, 18300, 18970, 19670, 20390],
+        ['otherServiceExp', 14100, 14450, 14810, 15180, 15560],
+        ['generalFundReserves', 18200, 17600, 16900, 16100, 15200],
+        ['earmarkedReserves', 31900, 30400, 28900, 27400, 26000],
+        ['reservesMinimumThreshold', 12000, 12150, 12300, 12450, 12600],
+      ]);
+
+      const instructionsSheet = utils.aoa_to_sheet([
+        ['MTFS Baseline Import Template - Instructions'],
+        [''],
+        ['What this file contains'],
+        ['1) Template_Blank: empty import template (preferred for data entry).'],
+        ['2) Example_DummyData: fully populated dummy example using the same headers.'],
+        ['3) Example_LongFormat: alternative row-based multi-year layout also supported by importer.'],
+        [''],
+        ['How to use'],
+        ['1) Open Template_Blank and replace row 2 values with your authority baseline values.'],
+        ['2) Keep header names unchanged. Values should be numeric and in £000s (thousands).'],
+        ['3) Save as .xlsx/.xls or export as .csv.'],
+        ['4) In MTFS app, go to Baseline Configuration > CSV Import and upload your file.'],
+        [''],
+        ['Accepted fields (header row format)'],
+        [headers.join(', ')],
+        [''],
+        ['Notes'],
+        ['- Import reads the first sheet for spreadsheet uploads.'],
+        ['- If using long-format input, the first column should contain field names and year columns should contain numbers.'],
+        ['- For long-format uploads, importer uses the first numeric year value per line as baseline.'],
+      ]);
+
+      const workbook = utils.book_new();
+      utils.book_append_sheet(workbook, blankSheet, 'Template_Blank');
+      utils.book_append_sheet(workbook, exampleSheet, 'Example_DummyData');
+      utils.book_append_sheet(workbook, longFormatExampleSheet, 'Example_LongFormat');
+      utils.book_append_sheet(workbook, instructionsSheet, 'Instructions');
+
+      const array = write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([array], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mtfs_baseline_import_template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setStatus({
+        type: 'success',
+        message: 'Template downloaded: mtfs_baseline_import_template.xlsx',
+      });
+    } catch {
+      setStatus({
+        type: 'error',
+        message: 'Could not generate template workbook. Please try again.',
+      });
+    } finally {
+      setIsBuildingTemplate(false);
+    }
+  };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -310,11 +410,22 @@ function CsvImportPanel() {
         <div className="text-[10px] text-[#8ca0c0] leading-relaxed">
           <p className="font-semibold text-[#f0f4ff] mb-1">CSV Format</p>
           <p>Upload CSV or Excel (.xlsx/.xls). Use headers + one data row, or line-name rows with year columns (£000s).</p>
+          <p className="mt-1">Use the download button below to get a ready-to-fill template with instructions and dummy example data.</p>
           <p className="mt-1 mono text-[9px] bg-[#080c14] p-1.5 rounded mt-1">
             councilTax,businessRates,coreGrants,feesAndCharges,pay,nonPay,ascDemandLed,cscDemandLed,otherServiceExp,generalFundReserves,earmarkedReserves,reservesMinimumThreshold
           </p>
         </div>
       </div>
+
+      <button
+        onClick={downloadImportTemplate}
+        disabled={isBuildingTemplate}
+        title="Download a baseline import workbook with blank template, dummy example, and instructions."
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        <Download size={12} />
+        {isBuildingTemplate ? 'Preparing Template...' : 'Download Import Template (.xlsx)'}
+      </button>
 
       <div
         className="flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed border-[rgba(99,179,237,0.15)] cursor-pointer hover:border-[rgba(59,130,246,0.4)] hover:bg-[rgba(59,130,246,0.03)] transition-all"

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Plus, Trash2, ChevronDown, ChevronRight, TrendingDown,
-  AlertTriangle, Target, RefreshCw
+  AlertTriangle, Target, RefreshCw, Upload, Download, CheckCircle
 } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
@@ -318,6 +318,11 @@ function ProposalRow({ proposal }: { proposal: SavingsProposal }) {
 // ── Main panel ─────────────────────────────────────────────────────────────────
 export function SavingsProgramme() {
   const { savingsProposals, addSavingsProposal, clearSavingsProposals, result, assumptions } = useMTFSStore();
+  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({
+    type: 'idle',
+    message: '',
+  });
+  const [isTemplateLoading, setIsTemplateLoading] = useState(false);
 
   const handleAdd = () => {
     const id = `sp-${Date.now()}`;
@@ -336,6 +341,221 @@ export function SavingsProgramme() {
       yearlyDelivery: defaultYearlyDelivery(deliveryYear),
     };
     addSavingsProposal(newProposal);
+  };
+
+  const parseNumber = (value: unknown, fallback = 0) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+    const cleaned = String(value ?? '').replace(/[£,\s%]/g, '');
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  const parseBool = (value: unknown, fallback = true) => {
+    const n = normalize(value);
+    if (!n) return fallback;
+    if (['true', 'yes', 'y', '1'].includes(n)) return true;
+    if (['false', 'no', 'n', '0'].includes(n)) return false;
+    return fallback;
+  };
+
+  const parseCategory = (value: unknown): SavingsCategory => {
+    const n = normalize(value);
+    if (['efficiency'].includes(n)) return 'efficiency';
+    if (['income'].includes(n)) return 'income';
+    if (['demandmanagement', 'demandmgmt'].includes(n)) return 'demand-management';
+    if (['servicereduction', 'servicecut'].includes(n)) return 'service-reduction';
+    if (['transformation'].includes(n)) return 'transformation';
+    if (['procurement'].includes(n)) return 'procurement';
+    return 'efficiency';
+  };
+
+  const parseRag = (value: unknown): RagStatus => {
+    const n = normalize(value);
+    if (n === 'red') return 'red';
+    if (n === 'amber' || n === 'yellow') return 'amber';
+    return 'green';
+  };
+
+  const parseDeliveryYear = (value: unknown): 1 | 2 | 3 | 4 | 5 => {
+    const y = Math.round(parseNumber(value, 1));
+    if (y <= 1) return 1;
+    if (y === 2) return 2;
+    if (y === 3) return 3;
+    if (y === 4) return 4;
+    return 5;
+  };
+
+  const clampPct = (value: unknown) => {
+    const num = parseNumber(value, 0);
+    return Math.max(0, Math.min(100, num));
+  };
+
+  const buildProposalFromRow = (row: Record<string, unknown>, index: number): SavingsProposal => {
+    const h = (key: string) => row[key];
+    const deliveryYear = parseDeliveryYear(
+      h('deliveryyear') ?? h('delivery_yr') ?? h('startyear') ?? h('year')
+    );
+    const yearlyDelivery: [number, number, number, number, number] = [
+      clampPct(h('year1') ?? h('y1') ?? h('deliveryy1')),
+      clampPct(h('year2') ?? h('y2') ?? h('deliveryy2')),
+      clampPct(h('year3') ?? h('y3') ?? h('deliveryy3')),
+      clampPct(h('year4') ?? h('y4') ?? h('deliveryy4')),
+      clampPct(h('year5') ?? h('y5') ?? h('deliveryy5')),
+    ];
+    const hasExplicitYearly = yearlyDelivery.some((v) => v > 0);
+    const proposalId = `sp-import-${Date.now()}-${index}`;
+
+    return {
+      id: proposalId,
+      name: String(h('name') ?? h('proposal') ?? h('proposalname') ?? '').trim(),
+      description: String(h('description') ?? h('notes') ?? '').trim(),
+      category: parseCategory(h('category')),
+      grossValue: parseNumber(h('grossvalue') ?? h('gross') ?? h('value') ?? h('grossvaluek'), 0),
+      deliveryYear,
+      achievementRate: clampPct(
+        h('achievementrate') ?? h('achievement') ?? h('deliveryrisk') ?? assumptions.expenditure.savingsDeliveryRisk
+      ),
+      isRecurring: parseBool(h('isrecurring') ?? h('recurring'), true),
+      ragStatus: parseRag(h('ragstatus') ?? h('rag')),
+      responsibleOfficer: String(h('responsibleofficer') ?? h('owner') ?? '').trim(),
+      yearlyDelivery: hasExplicitYearly ? yearlyDelivery : defaultYearlyDelivery(deliveryYear),
+    };
+  };
+
+  const parseRowsToProposals = (rows: (string | number)[][]): SavingsProposal[] => {
+    if (rows.length < 2) return [];
+    const rawHeaders = rows[0].map((cell) => String(cell ?? '').trim());
+    const normalizedHeaders = rawHeaders.map((header) => normalize(header));
+    const proposals: SavingsProposal[] = [];
+
+    for (let i = 1; i < rows.length; i += 1) {
+      const row = rows[i];
+      if (!row || row.every((cell) => String(cell ?? '').trim() === '')) continue;
+      const obj: Record<string, unknown> = {};
+      normalizedHeaders.forEach((key, idx) => {
+        obj[key] = row[idx];
+      });
+      const proposal = buildProposalFromRow(obj, i);
+      if (!proposal.name && proposal.grossValue === 0) continue;
+      proposals.push(proposal);
+    }
+    return proposals;
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      let rows: (string | number)[][] = [];
+      if (ext === 'xlsx' || ext === 'xls') {
+        const { read, utils } = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const workbook = read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) throw new Error('Spreadsheet contains no sheets');
+        rows = utils.sheet_to_json<(string | number)[]>(workbook.Sheets[firstSheetName], { header: 1 });
+      } else {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 2) throw new Error('CSV must include a header row and at least one data row');
+        const delimiter = lines[0].includes('\t') ? '\t' : ',';
+        rows = lines.map((line) => line.split(delimiter).map((cell) => cell.trim()));
+      }
+
+      const proposals = parseRowsToProposals(rows);
+      if (proposals.length === 0) {
+        throw new Error('No valid proposal rows found. Check headers and data values.');
+      }
+      proposals.forEach((proposal) => addSavingsProposal(proposal));
+      setImportStatus({
+        type: 'success',
+        message: `Imported ${proposals.length} savings proposal${proposals.length === 1 ? '' : 's'} from ${file.name}`,
+      });
+    } catch (error) {
+      setImportStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not import savings file',
+      });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const downloadTemplate = async () => {
+    setIsTemplateLoading(true);
+    try {
+      const { utils, write } = await import('xlsx');
+      const headers = [
+        'name',
+        'description',
+        'category',
+        'grossValue',
+        'deliveryYear',
+        'achievementRate',
+        'isRecurring',
+        'ragStatus',
+        'responsibleOfficer',
+        'year1',
+        'year2',
+        'year3',
+        'year4',
+        'year5',
+      ];
+      const blankSheet = utils.aoa_to_sheet([headers, Array(headers.length).fill('')]);
+      const exampleSheet = utils.aoa_to_sheet([
+        headers,
+        ['Management restructure', 'Streamline management layers and spans of control', 'efficiency', 1200, 1, 85, true, 'amber', 'Director of Resources', 50, 90, 100, 100, 100],
+        ['Adult care pathway redesign', 'Demand management and commissioning redesign', 'demand-management', 950, 2, 75, true, 'amber', 'Director of Adult Services', 0, 35, 70, 90, 100],
+        ['Commercial rent review', 'Annual review and re-letting strategy', 'income', 420, 1, 92, true, 'green', 'Head of Property', 60, 100, 100, 100, 100],
+        ['One-off asset rationalisation', 'Temporary savings from estate consolidation', 'transformation', 600, 1, 70, false, 'red', 'Transformation Lead', 40, 20, 0, 0, 0],
+      ]);
+      const instructionsSheet = utils.aoa_to_sheet([
+        ['Savings Programme Import Template - Instructions'],
+        [''],
+        ['What this workbook contains'],
+        ['1) Template_Blank: use this sheet to populate your own savings proposals'],
+        ['2) Example_DummyData: fully populated example rows'],
+        ['3) Instructions: usage notes and accepted values'],
+        [''],
+        ['How to import'],
+        ['1) Keep the header row names unchanged'],
+        ['2) Enter values in row 2 onwards'],
+        ['3) Save as .xlsx/.xls or export as .csv'],
+        ['4) In Savings Programme Builder click Import CSV/XLSX and select your file'],
+        [''],
+        ['Field guidance'],
+        ['- category: efficiency | income | demand-management | service-reduction | transformation | procurement'],
+        ['- ragStatus: green | amber | red'],
+        ['- grossValue: numeric value in £000s'],
+        ['- deliveryYear: integer 1 to 5'],
+        ['- achievementRate: percentage 0 to 100'],
+        ['- isRecurring: true/false (or yes/no, 1/0)'],
+        ['- year1..year5: optional yearly delivery percentages (0-100); if left blank, defaults are applied from deliveryYear'],
+        [''],
+        ['Note'],
+        ['- Import appends proposals to existing list; use Clear All first if you want a full replacement import'],
+      ]);
+      const workbook = utils.book_new();
+      utils.book_append_sheet(workbook, blankSheet, 'Template_Blank');
+      utils.book_append_sheet(workbook, exampleSheet, 'Example_DummyData');
+      utils.book_append_sheet(workbook, instructionsSheet, 'Instructions');
+      const bytes = write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mtfs_savings_import_template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+      setImportStatus({ type: 'success', message: 'Template downloaded: mtfs_savings_import_template.xlsx' });
+    } catch {
+      setImportStatus({ type: 'error', message: 'Could not generate savings template workbook. Please try again.' });
+    } finally {
+      setIsTemplateLoading(false);
+    }
   };
 
   // Aggregated programme summary
@@ -366,6 +586,23 @@ export function SavingsProgramme() {
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
+          <label
+            title="Import savings proposals from CSV or Excel."
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[rgba(16,185,129,0.15)] border border-[rgba(16,185,129,0.3)] text-[#10b981] text-[11px] font-semibold hover:bg-[rgba(16,185,129,0.25)] transition-colors cursor-pointer"
+          >
+            <Upload size={12} />
+            Import CSV/XLSX
+            <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImportFile} />
+          </label>
+          <button
+            onClick={() => void downloadTemplate()}
+            disabled={isTemplateLoading}
+            title="Download a savings import template with blank, example and instructions worksheets."
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Download size={12} />
+            {isTemplateLoading ? 'Preparing Template...' : 'Download Template'}
+          </button>
           <button
             onClick={handleAdd}
             title="Add a new savings proposal with default phasing and risk."
@@ -386,6 +623,21 @@ export function SavingsProgramme() {
           )}
         </div>
       </div>
+      {importStatus.type !== 'idle' && (
+        <div
+          className="flex items-start gap-2 p-3 rounded-lg text-[11px]"
+          style={{
+            background: importStatus.type === 'success' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${importStatus.type === 'success' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+          }}
+        >
+          {importStatus.type === 'success'
+            ? <CheckCircle size={12} className="text-[#10b981] mt-0.5 shrink-0" />
+            : <AlertTriangle size={12} className="text-[#ef4444] mt-0.5 shrink-0" />
+          }
+          <span style={{ color: importStatus.type === 'success' ? '#10b981' : '#ef4444' }}>{importStatus.message}</span>
+        </div>
+      )}
 
       {savingsProposals.length > 0 && (
         <>

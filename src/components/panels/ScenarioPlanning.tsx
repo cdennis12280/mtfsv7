@@ -8,6 +8,8 @@ import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Plus, Trash2, Download, TrendingUp, TrendingDown, Target, Upload, Save, FileSpreadsheet } from 'lucide-react';
 import { RichTooltip } from '../ui/RichTooltip';
+import { exportDecisionPackPdf } from '../../utils/decisionPackPdf';
+import { downloadSnapshotTemplatePack } from '../../utils/snapshotTemplatePack';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -45,6 +47,7 @@ export function ScenarioPlanning() {
     importSnapshotFromJson,
     exportSnapshotAsXlsx,
     importSnapshotFromXlsxFile,
+    authorityConfig,
   } = useMTFSStore();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [scenarioName, setScenarioName] = useState('');
@@ -54,11 +57,29 @@ export function ScenarioPlanning() {
   const [snapshotName, setSnapshotName] = useState('');
   const [snapshotDesc, setSnapshotDesc] = useState('');
   const [snapshotMessage, setSnapshotMessage] = useState('');
+  const [isSnapshotTemplateLoading, setIsSnapshotTemplateLoading] = useState(false);
   const [decisionA, setDecisionA] = useState('current');
   const [decisionB, setDecisionB] = useState('');
   const [decisionC, setDecisionC] = useState('');
 
-  const decisionOptions = [{ id: 'current', name: 'Current', result }, ...scenarios.map((s) => ({ id: s.id, name: s.name, result: s.result }))];
+  const decisionOptions = [
+    {
+      id: 'current',
+      name: 'Current',
+      description: 'Current in-session model position.',
+      type: 'current' as const,
+      assumptions,
+      result,
+    },
+    ...scenarios.map((s) => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      type: s.type,
+      assumptions: s.assumptions,
+      result: s.result,
+    })),
+  ];
 
   const handleSave = () => {
     if (!scenarioName.trim()) return;
@@ -112,6 +133,18 @@ export function ScenarioPlanning() {
       : importSnapshotFromJson(await file.text());
     setSnapshotMessage(imported.message);
     e.target.value = '';
+  };
+
+  const handleDownloadSnapshotTemplate = async () => {
+    setIsSnapshotTemplateLoading(true);
+    try {
+      await downloadSnapshotTemplatePack();
+      setSnapshotMessage('Template pack downloaded: mtfs_snapshot_template_pack.xlsx');
+    } catch {
+      setSnapshotMessage('Could not generate snapshot template pack. Please try again.');
+    } finally {
+      setIsSnapshotTemplateLoading(false);
+    }
   };
 
   // Build comparison chart data
@@ -199,26 +232,15 @@ export function ScenarioPlanning() {
   }));
 
   const exportDecisionPack = () => {
-    const lines = [
-      'MTFS Decision Pack (3 Options)',
-      `Generated: ${new Date().toLocaleString('en-GB')}`,
-      '',
-      ...decisionRows.flatMap((r) => [
-        `${r.label}: ${r.name}`,
-        `  5-year gap: ${fmtK(r.totalGap)}`,
-        `  Risk score: ${r.risk.toFixed(0)}/100`,
-        `  Year 5 reserves: ${fmtK(r.reservesY5)}`,
-        `  Trade-off: ${r.tradeoff}`,
-        '',
-      ]),
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `decision_pack_${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const selected = [optionA, optionB, optionC].map((o, i) => ({
+      label: `Option ${String.fromCharCode(65 + i)}`,
+      name: o.name,
+      description: o.description ?? '',
+      type: o.type,
+      assumptions: o.assumptions,
+      result: o.result,
+    }));
+    exportDecisionPackPdf({ authorityConfig, options: selected });
   };
 
   return (
@@ -308,11 +330,22 @@ export function ScenarioPlanning() {
             <CardTitle>Model Snapshots (A31)</CardTitle>
             <RichTooltip content="Save full model state, export/import JSON or Excel, and reload later to continue editing." />
           </div>
-          <label className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.15)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold cursor-pointer">
-            <Upload size={11} className="inline mr-1" />
-            Import JSON/XLSX
-            <input type="file" accept=".json,.xlsx,.xls,application/json" className="hidden" onChange={handleImportSnapshotFile} />
-          </label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void handleDownloadSnapshotTemplate()}
+              disabled={isSnapshotTemplateLoading}
+              className="px-3 py-1.5 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.35)] text-[#3b82f6] text-[10px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Download snapshot template pack with template, three dummy examples, and instructions."
+            >
+              <Download size={11} className="inline mr-1" />
+              {isSnapshotTemplateLoading ? 'Preparing Template...' : 'Download Template'}
+            </button>
+            <label className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.15)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold cursor-pointer">
+              <Upload size={11} className="inline mr-1" />
+              Import JSON/XLSX
+              <input type="file" accept=".json,.xlsx,.xls,application/json" className="hidden" onChange={handleImportSnapshotFile} />
+            </label>
+          </div>
         </CardHeader>
         <div className="grid grid-cols-[1fr_1fr_auto] gap-2 mb-3">
           <input
@@ -370,9 +403,9 @@ export function ScenarioPlanning() {
           <button
             onClick={exportDecisionPack}
             className="px-3 py-1.5 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[10px] font-semibold"
-            title="Export a concise 3-option decision pack."
+            title="Export a high-fidelity 3-option decision pack as PDF."
           >
-            Export Decision Pack
+            Export Decision Pack PDF
           </button>
         </CardHeader>
         <div className="grid grid-cols-3 gap-2 mb-3">

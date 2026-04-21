@@ -231,13 +231,22 @@ export function EnhancementPanel() {
         <Card>
           <CardHeader><div className="flex items-center gap-1.5"><CardTitle>Reserves Methodology</CardTitle><RichTooltip content="Selects how minimum reserves threshold is set for resilience checks." /></div></CardHeader>
           <div className="space-y-2 text-[11px]">
-            <select className="input" value={baseline.reservesAdequacyMethodology.method} onChange={(e) => updateReservesAdequacyMethodology({ method: e.target.value as ReservesAdequacyMethod })}>
-              <option value="fixed">Fixed minimum (£)</option>
-              <option value="pct_of_net_budget">% of net budget</option>
-              <option value="risk_based">Risk-based model</option>
-            </select>
-            <input className="input" type="number" value={baseline.reservesAdequacyMethodology.fixedMinimum} onChange={(e) => updateReservesAdequacyMethodology({ fixedMinimum: Number(e.target.value) || 0 })} />
-            <input className="input" type="number" value={baseline.reservesAdequacyMethodology.pctOfNetBudget} onChange={(e) => updateReservesAdequacyMethodology({ pctOfNetBudget: Number(e.target.value) || 0 })} />
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Method</p>
+              <select className="input" value={baseline.reservesAdequacyMethodology.method} onChange={(e) => updateReservesAdequacyMethodology({ method: e.target.value as ReservesAdequacyMethod })}>
+                <option value="fixed">Fixed minimum (£)</option>
+                <option value="pct_of_net_budget">% of net budget</option>
+                <option value="risk_based">Risk-based model</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Fixed Minimum Threshold (£k)</p>
+              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.fixedMinimum} onChange={(e) => updateReservesAdequacyMethodology({ fixedMinimum: Number(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Threshold as % of Net Budget</p>
+              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.pctOfNetBudget} onChange={(e) => updateReservesAdequacyMethodology({ pctOfNetBudget: Number(e.target.value) || 0 })} />
+            </div>
             <p className="text-[10px] text-[#8ca0c0]">Effective threshold: <span className="mono text-[#f0f4ff]">{fmtK(result.effectiveMinimumReservesThreshold)}</span></p>
           </div>
         </Card>
@@ -246,9 +255,22 @@ export function EnhancementPanel() {
           <CardHeader><div className="flex items-center gap-1.5"><CardTitle>Treasury Indicators</CardTitle><RichTooltip content="Tracks prudential limits and flags potential treasury breaches." /></div></CardHeader>
           <div className="space-y-2 text-[11px]">
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.treasuryIndicators.enabled} onChange={(e) => updateTreasuryIndicators({ enabled: e.target.checked })} />Enable indicators</label>
-            <input className="input" type="number" value={baseline.treasuryIndicators.authorisedLimit} onChange={(e) => updateTreasuryIndicators({ authorisedLimit: Number(e.target.value) || 0 })} placeholder="Authorised limit" />
-            <input className="input" type="number" value={baseline.treasuryIndicators.operationalBoundary} onChange={(e) => updateTreasuryIndicators({ operationalBoundary: Number(e.target.value) || 0 })} placeholder="Operational boundary" />
-            <input className="input" type="number" value={baseline.treasuryIndicators.netFinancingNeed} onChange={(e) => updateTreasuryIndicators({ netFinancingNeed: Number(e.target.value) || 0 })} placeholder="Net financing need" />
+            <div className="grid grid-cols-[1fr_130px] gap-2 px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Indicator</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Authorised Limit</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.authorisedLimit} onChange={(e) => updateTreasuryIndicators({ authorisedLimit: Number(e.target.value) || 0 })} aria-label="Authorised limit in thousands of pounds" />
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Operational Boundary</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.operationalBoundary} onChange={(e) => updateTreasuryIndicators({ operationalBoundary: Number(e.target.value) || 0 })} aria-label="Operational boundary in thousands of pounds" />
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Net Financing Need</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.netFinancingNeed} onChange={(e) => updateTreasuryIndicators({ netFinancingNeed: Number(e.target.value) || 0 })} aria-label="Net financing need in thousands of pounds" />
+            </div>
             {result.treasuryBreaches.length > 0 && (
               <div className="text-[10px] text-[#ef4444] space-y-1">
                 {result.treasuryBreaches.map((b) => <p key={b} className="flex items-center gap-1"><AlertTriangle size={10} />{b}</p>)}
@@ -261,14 +283,26 @@ export function EnhancementPanel() {
           <CardHeader><div className="flex items-center gap-1.5"><CardTitle>MRP Calculator</CardTitle><RichTooltip content="Applies selected MRP policy to calculate annual revenue charges." /></div></CardHeader>
           <div className="space-y-2 text-[11px]">
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.mrpCalculator.enabled} onChange={(e) => updateMrpCalculator({ enabled: e.target.checked })} />Enable MRP</label>
-            <select className="input" value={baseline.mrpCalculator.policy} onChange={(e) => updateMrpCalculator({ policy: e.target.value as MrpPolicy })}>
-              <option value="asset-life">Asset life</option>
-              <option value="annuity">Annuity</option>
-              <option value="straight-line">Straight-line</option>
-            </select>
-            <input className="input" type="number" value={baseline.mrpCalculator.baseBorrowing} onChange={(e) => updateMrpCalculator({ baseBorrowing: Number(e.target.value) || 0 })} placeholder="Base borrowing" />
-            <input className="input" type="number" value={baseline.mrpCalculator.assetLifeYears} onChange={(e) => updateMrpCalculator({ assetLifeYears: Number(e.target.value) || 1 })} placeholder="Asset life years" />
-            <input className="input" type="number" value={baseline.mrpCalculator.annuityRate} onChange={(e) => updateMrpCalculator({ annuityRate: Number(e.target.value) || 0 })} placeholder="Annuity %" />
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">MRP Policy</p>
+              <select className="input" value={baseline.mrpCalculator.policy} onChange={(e) => updateMrpCalculator({ policy: e.target.value as MrpPolicy })}>
+                <option value="asset-life">Asset life</option>
+                <option value="annuity">Annuity</option>
+                <option value="straight-line">Straight-line</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Base Borrowing (£k)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.baseBorrowing} onChange={(e) => updateMrpCalculator({ baseBorrowing: Number(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Asset Life (Years)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.assetLifeYears} onChange={(e) => updateMrpCalculator({ assetLifeYears: Number(e.target.value) || 1 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Annuity Rate (%)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.annuityRate} onChange={(e) => updateMrpCalculator({ annuityRate: Number(e.target.value) || 0 })} />
+            </div>
             <p className="text-[10px] text-[#8ca0c0]">Y1–Y5: {result.mrpCharges.map((v) => fmtK(v)).join(' · ')}</p>
           </div>
         </Card>

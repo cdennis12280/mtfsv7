@@ -28,10 +28,6 @@ export function Header() {
     setActiveTab,
     viewMode,
     setViewMode,
-    audienceMode,
-    setAudienceMode,
-    densityMode,
-    setDensityMode,
     result,
     authorityConfig,
   } = useMTFSStore();
@@ -117,44 +113,6 @@ export function Header() {
                 )}
               >
                 {mode} View
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
-            <RichTooltip content="Choose wording style for the audience: finance professionals or elected members." className="mx-1" />
-            {([
-              ['finance', 'Finance'],
-              ['members', 'Elected Members'],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                onClick={() => setAudienceMode(mode)}
-                title={mode === 'members' ? 'Use plain-English wording for elected members.' : 'Use finance-professional terminology.'}
-                className={clsx(
-                  'px-3 py-1.5 rounded-md text-[10px] font-semibold transition-all',
-                  audienceMode === mode ? 'bg-[#10b981] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
-            <RichTooltip content="Adjust information density for working, detailed, or presentation contexts." className="mx-1" />
-            {([
-              ['comfortable', 'Comfort'],
-              ['compact', 'Compact'],
-              ['presentation', 'Present'],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                onClick={() => setDensityMode(mode)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-md text-[10px] font-semibold transition-all',
-                  densityMode === mode ? 'bg-[#8b5cf6] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
-                )}
-              >
-                {label}
               </button>
             ))}
           </div>

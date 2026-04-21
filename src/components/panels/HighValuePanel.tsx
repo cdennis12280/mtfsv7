@@ -92,6 +92,15 @@ export function HighValuePanel() {
         </CardHeader>
         <div className="space-y-2">
           {grantSchedule.length === 0 && <p className="text-[11px] text-[#4a6080]">No grants configured.</p>}
+          {grantSchedule.length > 0 && (
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Grant</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Certainty</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">End Year</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Action</p>
+            </div>
+          )}
           {grantSchedule.map((g) => (
             <div key={g.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center">
               <input className="input" placeholder="Grant name" value={g.name} onChange={(e) => updateGrantScheduleEntry(g.id, { name: e.target.value })} title="Grant label used in reports." />
@@ -118,13 +127,33 @@ export function HighValuePanel() {
           <CardHeader><div className="flex items-center gap-1.5"><CardTitle>ASC Demand by Cohort</CardTitle><RichTooltip content="Separates demand assumptions for working-age and older adult cohorts." /></div></CardHeader>
           <div className="space-y-2 text-[11px]">
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={ascCohortModel.enabled} onChange={(e) => updateAscCohortModel({ enabled: e.target.checked })} />Enable cohort model</label>
-            <div className="grid grid-cols-2 gap-2">
-              <input className="input" type="number" value={ascCohortModel.population18to64} onChange={(e) => updateAscCohortModel({ population18to64: Number(e.target.value) || 0 })} placeholder="18-64 pop" />
-              <input className="input" type="number" value={ascCohortModel.population65plus} onChange={(e) => updateAscCohortModel({ population65plus: Number(e.target.value) || 0 })} placeholder="65+ pop" />
-              <input className="input" type="number" value={ascCohortModel.prevalence18to64} onChange={(e) => updateAscCohortModel({ prevalence18to64: Number(e.target.value) || 0 })} placeholder="Prev 18-64 %" />
-              <input className="input" type="number" value={ascCohortModel.prevalence65plus} onChange={(e) => updateAscCohortModel({ prevalence65plus: Number(e.target.value) || 0 })} placeholder="Prev 65+ %" />
-              <input className="input" type="number" value={ascCohortModel.unitCost18to64} onChange={(e) => updateAscCohortModel({ unitCost18to64: Number(e.target.value) || 0 })} placeholder="Unit cost 18-64" />
-              <input className="input" type="number" value={ascCohortModel.unitCost65plus} onChange={(e) => updateAscCohortModel({ unitCost65plus: Number(e.target.value) || 0 })} placeholder="Unit cost 65+" />
+            <div className="grid grid-cols-[1fr_120px] gap-2 px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Measure</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value</p>
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Population 18-64</p>
+              <input className="input text-right" type="number" value={ascCohortModel.population18to64} onChange={(e) => updateAscCohortModel({ population18to64: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Population 65+</p>
+              <input className="input text-right" type="number" value={ascCohortModel.population65plus} onChange={(e) => updateAscCohortModel({ population65plus: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Prevalence 18-64 (%)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.prevalence18to64} onChange={(e) => updateAscCohortModel({ prevalence18to64: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Prevalence 65+ (%)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.prevalence65plus} onChange={(e) => updateAscCohortModel({ prevalence65plus: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Unit Cost 18-64 (£)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.unitCost18to64} onChange={(e) => updateAscCohortModel({ unitCost18to64: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Unit Cost 65+ (£)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.unitCost65plus} onChange={(e) => updateAscCohortModel({ unitCost65plus: Number(e.target.value) || 0 })} />
             </div>
           </div>
         </Card>
@@ -133,6 +162,14 @@ export function HighValuePanel() {
           <CardHeader><div className="flex items-center gap-1.5"><CardTitle>Capital Financing Costs</CardTitle><RichTooltip content="Adds borrowing, interest and MRP effects into the revenue forecast." /></div></CardHeader>
           <div className="space-y-2 text-[11px]">
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={capitalFinancing.enabled} onChange={(e) => updateCapitalFinancing({ enabled: e.target.checked })} />Enable capital financing</label>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Borrowing by Year (£k)</p>
+              <div className="grid grid-cols-5 gap-1 px-1">
+                {[1, 2, 3, 4, 5].map((y) => (
+                  <p key={y} className="text-[9px] text-[#4a6080] text-center uppercase tracking-widest">Y{y}</p>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-5 gap-1">
               {capitalFinancing.borrowingByYear.map((v, i) => (
                 <input
@@ -145,13 +182,17 @@ export function HighValuePanel() {
                     arr[i] = Number(e.target.value) || 0;
                     updateCapitalFinancing({ borrowingByYear: arr });
                   }}
-                  placeholder={`Y${i + 1}`}
+                  aria-label={`Borrowing year ${i + 1} in thousands of pounds`}
                 />
               ))}
             </div>
+            <div className="grid grid-cols-2 gap-2 px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Interest Rate (%)</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">MRP Rate (%)</p>
+            </div>
             <div className="grid grid-cols-2 gap-2">
-              <input className="input" type="number" value={capitalFinancing.interestRate} onChange={(e) => updateCapitalFinancing({ interestRate: Number(e.target.value) || 0 })} placeholder="Interest %" />
-              <input className="input" type="number" value={capitalFinancing.mrpRate} onChange={(e) => updateCapitalFinancing({ mrpRate: Number(e.target.value) || 0 })} placeholder="MRP %" />
+              <input className="input" type="number" value={capitalFinancing.interestRate} onChange={(e) => updateCapitalFinancing({ interestRate: Number(e.target.value) || 0 })} />
+              <input className="input" type="number" value={capitalFinancing.mrpRate} onChange={(e) => updateCapitalFinancing({ mrpRate: Number(e.target.value) || 0 })} />
             </div>
           </div>
         </Card>
@@ -163,10 +204,14 @@ export function HighValuePanel() {
           <div className="space-y-2 text-[11px]">
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={riskBasedReserves.enabled} onChange={(e) => updateRiskBasedReserves({ enabled: e.target.checked })} />Enable risk pot calculation</label>
             <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={riskBasedReserves.adoptAsMinimumThreshold} onChange={(e) => updateRiskBasedReserves({ adoptAsMinimumThreshold: e.target.checked })} />Adopt as minimum threshold</label>
+            <div className="grid grid-cols-[1fr_130px] gap-2 px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Risk Pot</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
+            </div>
             {(['demandVolatility', 'savingsNonDelivery', 'fundingUncertainty', 'litigationRisk'] as const).map((k) => (
-              <div key={k} className="flex items-center justify-between">
-                <span className="text-[#4a6080]">{k}</span>
-                <input className="input w-28" type="number" value={riskBasedReserves[k]} onChange={(e) => updateRiskBasedReserves({ [k]: Number(e.target.value) || 0 })} />
+              <div key={k} className="grid grid-cols-[1fr_130px] gap-2 items-center">
+                <span className="text-[#8ca0c0]">{k}</span>
+                <input className="input text-right" type="number" value={riskBasedReserves[k]} onChange={(e) => updateRiskBasedReserves({ [k]: Number(e.target.value) || 0 })} />
               </div>
             ))}
             <p className="text-[10px] text-[#8ca0c0]">Recommended minimum: <span className="mono text-[#f0f4ff]">{fmtK(result.recommendedMinimumReserves)}</span></p>

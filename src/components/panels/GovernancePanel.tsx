@@ -3,6 +3,11 @@ import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { Database, BookOpen, AlertCircle, Download, FileText } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import type { MTFSResult, Assumptions, BaselineData, SavingsProposal, AuthorityConfig } from '../../types/financial';
+import {
+  exportCommitteeReportPdf,
+  exportOnePageMemberBriefPdf,
+  exportPremiumBriefPdf,
+} from '../../utils/governancePdf';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -335,15 +340,7 @@ export function GovernancePanel() {
   const { result, assumptions, baseline, savingsProposals, authorityConfig } = useMTFSStore();
 
   const handleFullExport = () => {
-    const text = buildNarrativeReport(result, assumptions, baseline, savingsProposals, authorityConfig);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safeName = authorityConfig.authorityName.replace(/[^a-zA-Z0-9]/g, '_');
-    a.download = `MTFS_Committee_Report_${safeName}_${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    exportCommitteeReportPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
   };
 
   const handleCsvExport = () => {
@@ -370,27 +367,11 @@ export function GovernancePanel() {
   };
 
   const handleOnePageBriefExport = () => {
-    const text = buildOnePageMemberBrief(result, authorityConfig);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safeName = authorityConfig.authorityName.replace(/[^a-zA-Z0-9]/g, '_');
-    a.download = `MTFS_One_Page_Brief_${safeName}_${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    exportOnePageMemberBriefPdf(result, authorityConfig);
   };
 
   const handlePremiumMarkdownExport = () => {
-    const text = buildPremiumMarkdownReport(result, assumptions, authorityConfig);
-    const blob = new Blob([text], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safeName = authorityConfig.authorityName.replace(/[^a-zA-Z0-9]/g, '_');
-    a.download = `MTFS_Premium_Brief_${safeName}_${new Date().toISOString().split('T')[0]}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    exportPremiumBriefPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
   };
 
   return (
@@ -402,7 +383,7 @@ export function GovernancePanel() {
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] transition-colors"
         >
           <FileText size={13} />
-          Export Committee Report
+          Export Committee Report PDF
         </button>
         <button
           onClick={handleCsvExport}
@@ -416,14 +397,14 @@ export function GovernancePanel() {
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[#f59e0b] text-[11px] font-semibold hover:bg-[rgba(245,158,11,0.18)] transition-colors"
         >
           <FileText size={13} />
-          Export One-Page Member Brief
+          Export One-Page Member Brief PDF
         </button>
         <button
           onClick={handlePremiumMarkdownExport}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(139,92,246,0.14)] border border-[rgba(139,92,246,0.36)] text-[#a78bfa] text-[11px] font-semibold hover:bg-[rgba(139,92,246,0.22)] transition-colors"
         >
           <FileText size={13} />
-          Export Premium Brief (.md)
+          Export Premium Brief PDF
         </button>
         <span className="text-[10px] text-[#4a6080]">
           Report branded for: <span className="text-[#8ca0c0] font-semibold">{authorityConfig.authorityName}</span>

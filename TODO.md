@@ -218,6 +218,26 @@ RES-004: Reserves below minimum threshold flag considers total of all named rese
 - [ ] **A29** — Voice command support for navigation
 - [ ] **A30** — Shareable read-only links with expiring access tokens
 
+---
+
+## Professionalisation Backlog (New Authority Readiness)
+
+### Top Priorities Added
+- [ ] **P1** — Onboarding docs for new local authorities
+- [ ] **P2** — Quick start guide
+
+### Top 10 Other High-Value Actions
+- [ ] **P3** — Role-based access control (RBAC) for finance, analyst, and read-only users
+- [ ] **P4** — SSO integration (Microsoft Entra ID/Azure AD or equivalent)
+- [ ] **P5** — Full audit logging for assumption changes, scenario runs, and exports
+- [ ] **P6** — Data validation and input guardrails on all financial assumptions
+- [ ] **P7** — Automated test suite (unit, integration, and end-to-end smoke tests)
+- [ ] **P8** — CI/CD pipeline with lint, test, build, and release checks
+- [ ] **P9** — Environment-based configuration and secure secret handling
+- [ ] **P10** — Performance optimisation for large scenario sets and slower devices
+- [ ] **P11** — Accessibility pass to meet WCAG 2.2 AA baseline
+- [ ] **P12** — Backup/recovery and data retention policy for snapshots and exports
+
 ### Additional Backlog Summary
 | Category | Total | Completed | Remaining |
 |---|---|---|---|
