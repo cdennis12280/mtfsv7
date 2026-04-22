@@ -35,7 +35,7 @@ describe('calculation engine', () => {
     expect(stressed.totalGap).toBeGreaterThan(base.totalGap);
   });
 
-  it('planned reserves usage caps annual drawdown when set', () => {
+  it('planned reserves usage applies explicit annual drawdown up to the gap', () => {
     const assumptions = clone(DEFAULT_ASSUMPTIONS);
     assumptions.policy.reservesUsage = 500;
 
@@ -49,6 +49,50 @@ describe('calculation engine', () => {
 
     expect(result.years.every((y) => y.reservesDrawdown <= 500)).toBe(true);
     expect(result.years.some((y) => y.netGap > 0)).toBe(true);
+  });
+
+  it('zero planned reserves usage means no reserves drawdown', () => {
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.policy.reservesUsage = 0;
+
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.councilTax = 0;
+    baseline.businessRates = 0;
+    baseline.coreGrants = 0;
+    baseline.feesAndCharges = 0;
+
+    const result = runCalculations(assumptions, baseline, []);
+    expect(result.years.every((y) => y.reservesDrawdown === 0)).toBe(true);
+  });
+
+  it('council tax equivalent increases when year-1 gap pressure increases', () => {
+    const pressureBaseline = clone(DEFAULT_BASELINE);
+    pressureBaseline.councilTax = 40_000;
+    pressureBaseline.businessRates = 20_000;
+    pressureBaseline.coreGrants = 15_000;
+    pressureBaseline.feesAndCharges = 10_000;
+
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), pressureBaseline, []);
+    const stressedAssumptions = clone(DEFAULT_ASSUMPTIONS);
+    stressedAssumptions.expenditure.payAward += 3;
+    const stressed = runCalculations(stressedAssumptions, pressureBaseline, []);
+
+    expect(stressed.councilTaxEquivalent).toBeGreaterThan(base.councilTaxEquivalent);
+  });
+
+  it('council tax equivalent decreases when CT income growth increases', () => {
+    const pressureBaseline = clone(DEFAULT_BASELINE);
+    pressureBaseline.councilTax = 40_000;
+    pressureBaseline.businessRates = 20_000;
+    pressureBaseline.coreGrants = 15_000;
+    pressureBaseline.feesAndCharges = 10_000;
+
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), pressureBaseline, []);
+    const ctBoostAssumptions = clone(DEFAULT_ASSUMPTIONS);
+    ctBoostAssumptions.funding.councilTaxIncrease += 2;
+    const boosted = runCalculations(ctBoostAssumptions, pressureBaseline, []);
+
+    expect(boosted.councilTaxEquivalent).toBeLessThan(base.councilTaxEquivalent);
   });
 });
 

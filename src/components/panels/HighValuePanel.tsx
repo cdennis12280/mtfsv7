@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, AlertTriangle, CheckCircle2, History, FileClock, Scale } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, CheckCircle2, History, FileClock, Scale, Upload, Download } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { RichTooltip } from '../ui/RichTooltip';
@@ -33,6 +33,62 @@ export function HighValuePanel() {
     riskBasedReserves,
     reservesRecoveryPlan,
   } = baseline;
+  const [grantImportStatus, setGrantImportStatus] = React.useState<{ type: 'idle' | 'success' | 'error'; message: string }>({
+    type: 'idle',
+    message: '',
+  });
+  const [isGrantTemplateLoading, setIsGrantTemplateLoading] = React.useState(false);
+
+  const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const toNumber = (value: unknown, fallback = 0) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+    const parsed = Number(String(value ?? '').replace(/[£,\s]/g, ''));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const toCertainty = (value: unknown): GrantCertainty => {
+    const n = normalize(value);
+    if (!n) return 'indicative';
+    if (n.startsWith('confirm')) return 'confirmed';
+    if (n.startsWith('assum')) return 'assumed';
+    return 'indicative';
+  };
+  const toEndYear = (value: unknown): 1 | 2 | 3 | 4 | 5 => {
+    const n = normalize(value);
+    const parsed = Number(n.replace(/[^\d]/g, ''));
+    const clamped = Math.min(5, Math.max(1, Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 3));
+    return clamped as 1 | 2 | 3 | 4 | 5;
+  };
+
+  const parseGrantRows = (rows: (string | number)[][]): GrantScheduleEntry[] => {
+    if (rows.length < 2) return [];
+    const headers = rows[0].map((h) => normalize(h));
+    const parsed: GrantScheduleEntry[] = [];
+    for (let i = 1; i < rows.length; i += 1) {
+      const rowValues = rows[i];
+      if (!rowValues || rowValues.every((v) => String(v ?? '').trim() === '')) continue;
+      const row: Record<string, unknown> = {};
+      headers.forEach((header, idx) => {
+        row[header] = rowValues[idx];
+      });
+      const pick = (...keys: string[]) => {
+        for (const key of keys) {
+          if (key in row) return row[key];
+        }
+        return undefined;
+      };
+      const name = String(pick('name', 'grantname', 'grant') ?? '').trim();
+      const value = toNumber(pick('value', 'valuek', 'annualvalue', 'amount'));
+      if (!name && value === 0) continue;
+      parsed.push({
+        id: `grant-import-${Date.now()}-${i}`,
+        name: name || `Imported Grant ${i}`,
+        value,
+        certainty: toCertainty(pick('certainty', 'confidence')),
+        endYear: toEndYear(pick('endyear', 'endy', 'yearend', 'ends')),
+      });
+    }
+    return parsed;
+  };
 
   const addGrant = () => {
     const entry: GrantScheduleEntry = {
@@ -43,6 +99,93 @@ export function HighValuePanel() {
       endYear: 3,
     };
     addGrantScheduleEntry(entry);
+  };
+
+  const handleGrantImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const { read, utils } = await import('xlsx');
+      const data = await file.arrayBuffer();
+      const workbook = read(data, { type: 'array' });
+      const firstSheet = workbook.SheetNames[0];
+      if (!firstSheet) throw new Error('Import file contains no sheets');
+      const rows = utils.sheet_to_json<(string | number)[]>(workbook.Sheets[firstSheet], { header: 1 });
+      const imported = parseGrantRows(rows);
+      if (imported.length === 0) throw new Error('No valid grant rows found. Check headers and values.');
+      imported.forEach((g) => addGrantScheduleEntry(g));
+      setGrantImportStatus({
+        type: 'success',
+        message: `Imported ${imported.length} grant entr${imported.length === 1 ? 'y' : 'ies'} from ${file.name}`,
+      });
+    } catch (error) {
+      setGrantImportStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not import grant schedule file',
+      });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleGrantTemplateDownload = async () => {
+    setIsGrantTemplateLoading(true);
+    try {
+      const { utils, write } = await import('xlsx');
+      const headers = ['name', 'value', 'certainty', 'endYear'];
+      const templateRows = [headers, ['', '', '', '']];
+      const exampleRows = [
+        headers,
+        ['Public Health Grant', 4200, 'confirmed', 5],
+        ['Household Support Fund', 1800, 'indicative', 2],
+        ['Transformation Grant', 1250, 'assumed', 3],
+        ['Supporting Families Grant', 900, 'indicative', 4],
+      ];
+      const instructionsRows = [
+        ['Grant Schedule Builder Template - Instructions'],
+        [''],
+        ['Workbook tabs'],
+        ['1) Template_Blank: complete this sheet and import it'],
+        ['2) Example_Dummy_Data: sample completed entries'],
+        ['3) Instructions: guidance and field definitions'],
+        [''],
+        ['How to use'],
+        ['1) Keep header names exactly as supplied'],
+        ['2) Enter one grant per row in Template_Blank'],
+        ['3) certainty values: confirmed, indicative, assumed'],
+        ['4) endYear values: 1 to 5 (MTFS year grant ends)'],
+        ['5) Save as .xlsx/.xls or export as .csv'],
+        ['6) In Grant Schedule Builder click Import CSV/XLSX and choose your file'],
+        [''],
+        ['Field definitions'],
+        ['- name: grant label used in model and reports'],
+        ['- value: annual grant value in £000'],
+        ['- certainty: confidence weighting applied in funding calculations'],
+        ['- endYear: final year grant remains available'],
+        [''],
+        ['Note'],
+        ['- Import appends entries to existing grants; remove existing rows if replacing data.'],
+      ];
+
+      const workbook = utils.book_new();
+      utils.book_append_sheet(workbook, utils.aoa_to_sheet(templateRows), 'Template_Blank');
+      utils.book_append_sheet(workbook, utils.aoa_to_sheet(exampleRows), 'Example_Dummy_Data');
+      utils.book_append_sheet(workbook, utils.aoa_to_sheet(instructionsRows), 'Instructions');
+
+      const bytes = write(workbook, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mtfs_grant_schedule_template.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+      setGrantImportStatus({ type: 'success', message: 'Template downloaded: mtfs_grant_schedule_template.xlsx' });
+    } catch {
+      setGrantImportStatus({ type: 'error', message: 'Could not generate grant schedule template workbook. Please try again.' });
+    } finally {
+      setIsGrantTemplateLoading(false);
+    }
   };
 
   return (
@@ -88,9 +231,43 @@ export function HighValuePanel() {
             <CardTitle>Grant Schedule Builder</CardTitle>
             <RichTooltip content="Models grant certainty and expiry over the MTFS horizon." />
           </div>
-          <button onClick={addGrant} className="text-[11px] text-[#3b82f6] flex items-center gap-1" title="Add a new grant line."><Plus size={12} />Add Grant</button>
+          <div className="flex items-center gap-2">
+            <label
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.3)] text-[#10b981] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(16,185,129,0.2)] transition-colors"
+              title="Import grant schedule from CSV or Excel."
+            >
+              <Upload size={11} />
+              Import CSV/XLSX
+              <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleGrantImportFile} />
+            </label>
+            <button
+              onClick={() => void handleGrantTemplateDownload()}
+              disabled={isGrantTemplateLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Download grant schedule import template with dummy example and instructions."
+            >
+              <Download size={11} />
+              {isGrantTemplateLoading ? 'Preparing...' : 'Download Template'}
+            </button>
+            <button onClick={addGrant} className="text-[11px] text-[#3b82f6] flex items-center gap-1" title="Add a new grant line."><Plus size={12} />Add Grant</button>
+          </div>
         </CardHeader>
         <div className="space-y-2">
+          {grantImportStatus.type !== 'idle' && (
+            <div
+              className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]"
+              style={{
+                background: grantImportStatus.type === 'success' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                border: `1px solid ${grantImportStatus.type === 'success' ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+              }}
+            >
+              {grantImportStatus.type === 'success'
+                ? <CheckCircle2 size={12} className="text-[#10b981] mt-0.5 shrink-0" />
+                : <AlertTriangle size={12} className="text-[#ef4444] mt-0.5 shrink-0" />
+              }
+              <span style={{ color: grantImportStatus.type === 'success' ? '#10b981' : '#ef4444' }}>{grantImportStatus.message}</span>
+            </div>
+          )}
           {grantSchedule.length === 0 && <p className="text-[11px] text-[#4a6080]">No grants configured.</p>}
           {grantSchedule.length > 0 && (
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center px-1">

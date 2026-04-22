@@ -176,10 +176,6 @@ export function Section151Panel() {
             <p><span className="text-[#f0f4ff] font-semibold">Deterministic logic:</span> All calculations are rule-based and fully auditable. There is no black-box AI in the financial calculations — all outputs are directly traceable to inputs.</p>
           </div>
           <div className="flex items-start gap-2">
-            <AlertTriangle size={12} className="text-[#f59e0b] mt-0.5 shrink-0" />
-            <p><span className="text-[#f59e0b] font-semibold">Limitations:</span> This model uses simplified assumptions and illustrative baseline figures. It should be calibrated with actual authority data before use in statutory reporting. The model does not constitute legal or professional financial advice. The S151 Officer retains professional judgement over all assurance statements.</p>
-          </div>
-          <div className="flex items-start gap-2">
             <Clock size={12} className="text-[#4a6080] mt-0.5 shrink-0" />
             <p><span className="text-[#4a6080] font-semibold">Model version:</span> MTFS DSS v7.0 · Baseline year: {new Date().getFullYear()} · Planning horizon: {new Date().getFullYear()}–{new Date().getFullYear() + 4}</p>
           </div>
@@ -192,7 +188,7 @@ export function Section151Panel() {
           <CardTitle>Current Assumptions Log</CardTitle>
           <span className="text-[9px] text-[#4a6080]">Generated {new Date().toLocaleString('en-GB')}</span>
         </CardHeader>
-        <div className="grid grid-cols-2 gap-3 text-[11px]">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-[11px]">
           {[
             ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}% p.a.`],
             ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(1)}% p.a.`],

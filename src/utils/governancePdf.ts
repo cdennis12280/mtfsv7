@@ -1,9 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Assumptions, AuthorityConfig, BaselineData, MTFSResult, SavingsProposal } from '../types/financial';
+import { runCalculations } from '../engine/calculations';
 
 const PAGE_MARGIN = 36;
 const PAGE_BOTTOM = 42;
+const MODEL_VERSION = 'MTFS DSS v7.0';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -48,12 +50,123 @@ function writeParagraph(doc: jsPDF, y: number, text: string, size = 9.5) {
   return y + lines.length * (size + 2);
 }
 
+function writeCallout(doc: jsPDF, y: number, title: string, text: string, theme: 'slate' | 'amber' | 'blue' = 'slate') {
+  const width = doc.internal.pageSize.getWidth() - PAGE_MARGIN * 2;
+  const palette = theme === 'amber'
+    ? { fill: [255, 247, 237], stroke: [251, 191, 36], title: [146, 64, 14] }
+    : theme === 'blue'
+      ? { fill: [239, 246, 255], stroke: [59, 130, 246], title: [30, 64, 175] }
+      : { fill: [241, 245, 249], stroke: [148, 163, 184], title: [30, 41, 59] };
+  const lines = doc.splitTextToSize(text, width - 16);
+  const height = Math.max(44, 26 + lines.length * 11);
+  doc.setFillColor(palette.fill[0], palette.fill[1], palette.fill[2]);
+  doc.setDrawColor(palette.stroke[0], palette.stroke[1], palette.stroke[2]);
+  doc.roundedRect(PAGE_MARGIN, y, width, height, 6, 6, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(palette.title[0], palette.title[1], palette.title[2]);
+  doc.text(title, PAGE_MARGIN + 8, y + 14);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(51, 65, 85);
+  doc.text(lines, PAGE_MARGIN + 8, y + 28);
+  return y + height + 10;
+}
+
+function drawCompactTrendBars(
+  doc: jsPDF,
+  y: number,
+  title: string,
+  labels: string[],
+  values: number[],
+  color: [number, number, number]
+) {
+  const width = doc.internal.pageSize.getWidth() - PAGE_MARGIN * 2;
+  const height = 82;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text(title, PAGE_MARGIN, y);
+  const chartTop = y + 10;
+  const chartHeight = 56;
+  const barAreaWidth = width - 8;
+  const maxAbs = Math.max(1, ...values.map((v) => Math.abs(v)));
+  const gap = 8;
+  const barW = (barAreaWidth - gap * (values.length - 1)) / values.length;
+  values.forEach((v, idx) => {
+    const x = PAGE_MARGIN + idx * (barW + gap);
+    const h = (Math.abs(v) / maxAbs) * chartHeight;
+    const y0 = chartTop + chartHeight - h;
+    doc.setFillColor(color[0], color[1], color[2]);
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(x, y0, barW, h, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.6);
+    doc.setTextColor(71, 85, 105);
+    doc.text(labels[idx], x + barW / 2, chartTop + chartHeight + 10, { align: 'center' });
+  });
+  doc.setDrawColor(203, 213, 225);
+  doc.line(PAGE_MARGIN, chartTop + chartHeight, PAGE_MARGIN + width, chartTop + chartHeight);
+  return y + height;
+}
+
+interface ComparatorScenario {
+  name: 'Base' | 'Optimistic' | 'Stress';
+  result: MTFSResult;
+  confidence: string;
+  note: string;
+}
+
+function buildComparatorScenarios(
+  result: MTFSResult,
+  assumptions: Assumptions,
+  baseline: BaselineData,
+  savingsProposals: SavingsProposal[]
+): ComparatorScenario[] {
+  const optimistic: Assumptions = {
+    ...assumptions,
+    funding: {
+      ...assumptions.funding,
+      councilTaxIncrease: assumptions.funding.councilTaxIncrease + 0.5,
+      businessRatesGrowth: assumptions.funding.businessRatesGrowth + 0.6,
+      grantVariation: assumptions.funding.grantVariation + 0.8,
+    },
+    expenditure: {
+      ...assumptions.expenditure,
+      payAward: Math.max(0, assumptions.expenditure.payAward - 0.6),
+      nonPayInflation: Math.max(0, assumptions.expenditure.nonPayInflation - 0.6),
+      savingsDeliveryRisk: Math.min(100, assumptions.expenditure.savingsDeliveryRisk + 8),
+    },
+  };
+  const stress: Assumptions = {
+    ...assumptions,
+    funding: {
+      ...assumptions.funding,
+      councilTaxIncrease: Math.max(0, assumptions.funding.councilTaxIncrease - 0.75),
+      businessRatesGrowth: assumptions.funding.businessRatesGrowth - 1.0,
+      grantVariation: assumptions.funding.grantVariation - 1.0,
+    },
+    expenditure: {
+      ...assumptions.expenditure,
+      payAward: assumptions.expenditure.payAward + 1.0,
+      nonPayInflation: assumptions.expenditure.nonPayInflation + 1.0,
+      ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 1.5,
+      savingsDeliveryRisk: Math.max(30, assumptions.expenditure.savingsDeliveryRisk - 12),
+    },
+  };
+  return [
+    { name: 'Base', result, confidence: 'Central planning assumption set', note: 'Primary planning case used for formal budget strategy.' },
+    { name: 'Optimistic', result: runCalculations(optimistic, baseline, savingsProposals), confidence: 'Improved delivery/funding case', note: 'Used to test upside and delivery headroom.' },
+    { name: 'Stress', result: runCalculations(stress, baseline, savingsProposals), confidence: 'Downside stress case', note: 'Used for resilience and contingency planning.' },
+  ];
+}
+
 function finalY(doc: jsPDF, fallback: number) {
   const maybe = doc as jsPDF & { lastAutoTable?: { finalY: number } };
   return maybe.lastAutoTable?.finalY ?? fallback;
 }
 
-function addFooter(doc: jsPDF, authorityName: string) {
+function addFooter(doc: jsPDF, authorityName: string, generatedAt: Date) {
   const pages = doc.getNumberOfPages();
   for (let i = 1; i <= pages; i += 1) {
     doc.setPage(i);
@@ -62,7 +175,8 @@ function addFooter(doc: jsPDF, authorityName: string) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`MTFS Governance Export · ${authorityName || 'Local Authority'}`, PAGE_MARGIN, h - 18);
+    doc.text(`MTFS Governance Export · ${authorityName || 'Local Authority'} · ${MODEL_VERSION}`, PAGE_MARGIN, h - 18);
+    doc.text(`Generated ${generatedAt.toLocaleString('en-GB')}`, PAGE_MARGIN, h - 8);
     doc.text(`Page ${i} of ${pages}`, w - PAGE_MARGIN, h - 18, { align: 'right' });
   }
 }
@@ -76,6 +190,8 @@ export function exportCommitteeReportPdf(
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
+  const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
+  const baseScenario = scenarioRows[0].result;
 
   doc.setFillColor(15, 23, 42);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 142, 'F');
@@ -116,10 +232,20 @@ export function exportCommitteeReportPdf(
     y,
     `Headline risks include reserves position (${result.yearReservesExhausted ? `exhausted by ${result.yearReservesExhausted}` : 'not exhausted in period'}) and overall risk score ${result.overallRiskScore.toFixed(0)}/100. Section 151 statutory risk trigger: ${result.s114Triggered ? 'At risk' : 'No immediate trigger'}.`
   );
+  y += 6;
+  y = writeCallout(
+    doc,
+    y,
+    'Decision Required',
+    result.totalGap <= 0
+      ? 'Approve the recommended monitoring cadence and reserve protection controls. No immediate corrective savings decision is required under current assumptions.'
+      : `Approve a recurring mitigation package equivalent to ${fmtK(result.requiredSavingsToBalance)} per annum and confirm contingency triggers if delivery falls below plan.`,
+    result.totalGap <= 0 ? 'blue' : 'amber'
+  );
 
   y += 10;
   y = ensureSpace(doc, y, 220);
-  y = writeSectionTitle(doc, y, 'Headline Indicators');
+  y = writeSectionTitle(doc, y, 'Decision Dashboard');
   autoTable(doc, {
     startY: y,
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
@@ -135,6 +261,45 @@ export function exportCommitteeReportPdf(
       ['Year Reserves Exhausted', result.yearReservesExhausted ?? 'Not exhausted in period'],
       ['s.114 Trigger Assessment', result.s114Triggered ? `At risk (${result.s114Reasons.join('; ') || 'see risk section'})` : 'No immediate trigger'],
     ],
+  });
+  y = finalY(doc, y) + 10;
+
+  y = ensureSpace(doc, y, 120);
+  y = drawCompactTrendBars(
+    doc,
+    y,
+    'Yearly Raw Gap Trend (compact)',
+    result.years.map((r) => `Y${r.year}`),
+    result.years.map((r) => r.rawGap),
+    [239, 68, 68]
+  );
+  y += 6;
+  y = drawCompactTrendBars(
+    doc,
+    y,
+    'Closing Reserves Trend (compact)',
+    result.years.map((r) => `Y${r.year}`),
+    result.years.map((r) => r.totalClosingReserves),
+    [59, 130, 246]
+  );
+  y += 8;
+
+  y = ensureSpace(doc, y, 210);
+  y = writeSectionTitle(doc, y, 'Scenario Comparator (Base / Optimistic / Stress)');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.5, cellPadding: 4 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    head: [['Scenario', '5-Year Gap', 'Delta vs Base', 'Risk Score', 'Y5 Reserves', 'Confidence Note']],
+    body: scenarioRows.map((s) => [
+      s.name,
+      fmtK(s.result.totalGap),
+      s.name === 'Base' ? '—' : fmtK(s.result.totalGap - baseScenario.totalGap),
+      `${s.result.overallRiskScore.toFixed(0)}/100`,
+      fmtK(s.result.years[4]?.totalClosingReserves ?? 0),
+      `${s.confidence}: ${s.note}`,
+    ]),
   });
   y = finalY(doc, y) + 10;
 
@@ -205,6 +370,23 @@ export function exportCommitteeReportPdf(
   });
   y = finalY(doc, y) + 8;
 
+  y = ensureSpace(doc, y, 180);
+  y = writeSectionTitle(doc, y, 'Legal and Compliance Mapping');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.3, cellPadding: 3.8 },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+    head: [['Framework Reference', 'Check', 'Current Position']],
+    body: [
+      ['Local Government Act 2003 s25', 'Robustness of estimates', result.totalGap <= 0 ? 'Improved; balanced plan modelled' : `Gap remains (${fmtK(result.totalGap)})`],
+      ['Local Government Act 2003 s25', 'Adequacy of reserves', result.reservesToNetBudget >= 5 ? `Within reference range (${result.reservesToNetBudget.toFixed(1)}%)` : `Below reference (${result.reservesToNetBudget.toFixed(1)}%)`],
+      ['Section 114 risk trigger', 'Statutory distress indicators', result.s114Triggered ? `At risk (${result.s114Reasons.join('; ') || 'see narrative'})` : 'No immediate trigger under current assumptions'],
+      ['CIPFA Prudential Code', 'Authorised/Operational boundary tests', result.treasuryBreaches.length > 0 ? result.treasuryBreaches.join('; ') : 'No treasury indicator breach flagged'],
+    ],
+  });
+  y = finalY(doc, y) + 10;
+
   const topInsights = result.insights.slice(0, 8);
   if (topInsights.length > 0) {
     y = ensureSpace(doc, y, 120);
@@ -244,18 +426,66 @@ export function exportCommitteeReportPdf(
     sy = writeParagraph(doc, sy, `${idx + 1}. ${point}`, 9);
   });
 
-  addFooter(doc, authorityConfig.authorityName);
+  doc.addPage();
+  let ay = PAGE_MARGIN;
+  ay = writeSectionTitle(doc, ay, 'Appendix: Methodology, Glossary and Data Notes');
+  ay = writeParagraph(doc, ay, 'Methodology summary: deterministic, driver-based forecasting with explicit treatment of recurring vs one-off measures and reserve adequacy checks.', 9);
+  ay += 4;
+  autoTable(doc, {
+    startY: ay,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.2, cellPadding: 3.6 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    head: [['Glossary Term', 'Definition']],
+    body: [
+      ['Structural gap', 'Recurring shortfall after removing one-off items.'],
+      ['Council tax equivalent', 'Year 1 shortfall expressed as % of Year 1 council tax income.'],
+      ['Reserves-to-budget ratio', 'Year 5 closing reserves as a percentage of Year 5 funding.'],
+      ['s.114 trigger indicator', 'Composite warning based on reserve exhaustion, persistent deficits and risk score.'],
+    ],
+  });
+  ay = finalY(doc, ay) + 8;
+  ay = ensureSpace(doc, ay, 180);
+  autoTable(doc, {
+    startY: ay,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.2, cellPadding: 3.6 },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+    head: [['Data Definition', 'Current Value / Source']],
+    body: [
+      ['Assumption set', `${MODEL_VERSION} / Generated ${now.toLocaleString('en-GB')}`],
+      ['Savings proposals', `${savingsProposals.length} lines`],
+      ['Named reserves', `${baseline.namedReserves.length} lines`],
+      ['Custom service lines', `${baseline.customServiceLines.length} lines`],
+      ['Assurance wording', assurance],
+      ['Audit trail excerpt', result.insights.slice(0, 2).map((i) => i.title).join(' | ') || 'No flagged insight excerpt'],
+    ],
+  });
+  ay = finalY(doc, ay) + 8;
+  ay = writeParagraph(
+    doc,
+    ay,
+    'Limitations and assurance: model outputs support decision-making and do not replace Section 151 professional judgement. Calibration against authority accounts and treasury strategy is required before statutory sign-off.',
+    8.8
+  );
+
+  addFooter(doc, authorityConfig.authorityName, now);
   doc.save(`MTFS_Committee_Report_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
 }
 
 export function exportOnePageMemberBriefPdf(
   result: MTFSResult,
+  assumptions: Assumptions,
+  baseline: BaselineData,
+  savingsProposals: SavingsProposal[],
   authorityConfig: AuthorityConfig
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
   const y1 = result.years[0];
   const y5 = result.years[4];
+  const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
+  const baseScenario = scenarioRows[0].result;
 
   doc.setFillColor(30, 41, 59);
   doc.rect(0, 0, doc.internal.pageSize.getWidth(), 94, 'F');
@@ -269,7 +499,7 @@ export function exportOnePageMemberBriefPdf(
 
   let y = 122;
   doc.setTextColor(15, 23, 42);
-  y = writeSectionTitle(doc, y, 'Headline Position');
+  y = writeSectionTitle(doc, y, 'At-a-Glance Position');
   autoTable(doc, {
     startY: y,
     margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
@@ -288,8 +518,17 @@ export function exportOnePageMemberBriefPdf(
     ],
   });
   y = finalY(doc, y) + 8;
+  y = writeCallout(
+    doc,
+    y,
+    'What Members Need To Know',
+    result.totalGap <= 0
+      ? 'The current plan is modelled as balanced over five years. Focus now shifts to delivery discipline, reserve protection, and ongoing monitoring.'
+      : `The current plan still shows a ${fmtK(result.totalGap)} five-year gap. Members need to agree recurring actions and a contingency trigger if delivery slips.`,
+    result.totalGap <= 0 ? 'blue' : 'amber'
+  );
 
-  y = ensureSpace(doc, y, 160);
+  y = ensureSpace(doc, y, 140);
   y = writeSectionTitle(doc, y, 'Top 3 Risks for Members');
   const topRisks = [...result.riskFactors].sort((a, b) => b.score - a.score).slice(0, 3);
   topRisks.forEach((r, idx) => {
@@ -298,17 +537,42 @@ export function exportOnePageMemberBriefPdf(
   });
 
   y += 4;
-  y = ensureSpace(doc, y, 110);
+  y = ensureSpace(doc, y, 140);
+  y = writeSectionTitle(doc, y, 'Scenario Snapshot');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.3, cellPadding: 3.6 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    head: [['Case', '5yr Gap', 'Delta vs Base', 'Y5 Reserves', 'Confidence']],
+    body: scenarioRows.map((s) => [
+      s.name,
+      fmtK(s.result.totalGap),
+      s.name === 'Base' ? '—' : fmtK(s.result.totalGap - baseScenario.totalGap),
+      fmtK(s.result.years[4]?.totalClosingReserves ?? 0),
+      s.confidence,
+    ]),
+  });
+  y = finalY(doc, y) + 6;
+
+  y = ensureSpace(doc, y, 125);
   y = writeSectionTitle(doc, y, 'Immediate Decisions Requested');
   [
-    'Confirm risk appetite and prudent reserves threshold for the MTFS period.',
+    'Confirm risk appetite and prudent reserves threshold for the MTFS period (Section 25 reserve adequacy).',
     'Approve recurring savings and income plan aligned to required annual action.',
-    'Require quarterly delivery tracking with escalation for amber/red risks.',
+    'Require quarterly delivery tracking with escalation for amber/red risks and statutory trigger monitoring (s.114).',
   ].forEach((item, idx) => {
     y = writeParagraph(doc, y, `${idx + 1}. ${item}`, 9);
   });
+  y += 4;
+  y = writeParagraph(
+    doc,
+    y,
+    `Plain-English legal context: Section 151 assurance currently reads "${result.totalGap <= 0 && !result.yearReservesExhausted ? 'positive with monitoring' : 'qualified - further mitigation required'}".`,
+    8.7
+  );
 
-  addFooter(doc, authorityConfig.authorityName);
+  addFooter(doc, authorityConfig.authorityName, now);
   doc.save(`MTFS_One_Page_Brief_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
 }
 
@@ -321,6 +585,8 @@ export function exportPremiumBriefPdf(
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
+  const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
+  const baseScenario = scenarioRows[0].result;
   const priorities = [authorityConfig.strategicPriority1, authorityConfig.strategicPriority2, authorityConfig.strategicPriority3]
     .map((p) => (p || '').trim())
     .filter(Boolean);
@@ -344,6 +610,16 @@ export function exportPremiumBriefPdf(
     y,
     `The authority is modelled with a five-year gap of ${fmtK(result.totalGap)} and structural gap ${fmtK(result.totalStructuralGap)}. Overall risk is ${result.overallRiskScore.toFixed(0)}/100 (${riskBand(result.overallRiskScore)}). ${result.s114Triggered ? 'Statutory trigger indicators suggest elevated concern that should be explicitly addressed in governance decisions.' : 'No immediate statutory trigger is indicated under current assumptions.'}`
   );
+  y += 6;
+  y = writeCallout(
+    doc,
+    y,
+    'Leadership Summary',
+    result.totalGap <= 0
+      ? 'Current plan indicates affordability with manageable risk. Priority is execution quality, reserve discipline, and transparency of delivery.'
+      : `Residual affordability pressure remains. Leadership focus should be on recurring mitigations, decision sequencing, and explicit contingency governance.`,
+    result.totalGap <= 0 ? 'blue' : 'amber'
+  );
 
   y += 6;
   autoTable(doc, {
@@ -360,6 +636,36 @@ export function exportPremiumBriefPdf(
     ],
   });
   y = finalY(doc, y) + 10;
+
+  y = ensureSpace(doc, y, 210);
+  y = writeSectionTitle(doc, y, 'Scenario Comparator with Delta View');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.3, cellPadding: 3.8 },
+    headStyles: { fillColor: [67, 56, 202], textColor: 255, fontStyle: 'bold' },
+    head: [['Scenario', '5yr Gap', 'Delta vs Base', 'Risk', 'Y5 Reserves', 'Confidence / Use']],
+    body: scenarioRows.map((s) => [
+      s.name,
+      fmtK(s.result.totalGap),
+      s.name === 'Base' ? '—' : fmtK(s.result.totalGap - baseScenario.totalGap),
+      `${s.result.overallRiskScore.toFixed(0)}/100`,
+      fmtK(s.result.years[4]?.totalClosingReserves ?? 0),
+      `${s.confidence}; ${s.note}`,
+    ]),
+  });
+  y = finalY(doc, y) + 8;
+
+  y = ensureSpace(doc, y, 110);
+  y = drawCompactTrendBars(
+    doc,
+    y,
+    'Compact Visual: 5-Year Raw Gap Profile',
+    result.years.map((r) => `Y${r.year}`),
+    result.years.map((r) => r.rawGap),
+    [124, 58, 237]
+  );
+  y += 8;
 
   y = ensureSpace(doc, y, 220);
   y = writeSectionTitle(doc, y, 'Assumptions and Model Inputs');
@@ -380,6 +686,23 @@ export function exportPremiumBriefPdf(
     ],
   });
   y = finalY(doc, y) + 10;
+
+  y = ensureSpace(doc, y, 165);
+  y = writeSectionTitle(doc, y, 'Governance / Legal Mapping');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.2, cellPadding: 3.6 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    head: [['Reference', 'Test', 'Position']],
+    body: [
+      ['LGA 2003 s25', 'Estimate robustness', result.totalGap <= 0 ? 'Balanced central case' : `Residual shortfall ${fmtK(result.totalGap)}`],
+      ['LGA 2003 s25', 'Reserve adequacy', result.reservesToNetBudget >= 5 ? `Within reference ${result.reservesToNetBudget.toFixed(1)}%` : `Below reference ${result.reservesToNetBudget.toFixed(1)}%`],
+      ['Section 114', 'Trigger indicators', result.s114Triggered ? `At risk (${result.s114Reasons.join('; ') || 'see risk section'})` : 'No immediate trigger'],
+      ['CIPFA Prudential Code', 'Treasury indicators', result.treasuryBreaches.length > 0 ? result.treasuryBreaches.join('; ') : 'No indicator breach flagged'],
+    ],
+  });
+  y = finalY(doc, y) + 8;
 
   y = ensureSpace(doc, y, 200);
   y = writeSectionTitle(doc, y, 'Yearly Outlook');
@@ -448,6 +771,47 @@ export function exportPremiumBriefPdf(
     y = writeParagraph(doc, y, `- ${line}`, 9);
   });
 
-  addFooter(doc, authorityConfig.authorityName);
+  doc.addPage();
+  let annY = PAGE_MARGIN;
+  annY = writeSectionTitle(doc, annY, 'Annex: Methodology, Definitions and Audit Context');
+  annY = writeParagraph(doc, annY, 'Methodology: deterministic, driver-based MTFS model aligned to CIPFA planning principles, with transparent reserve and risk diagnostics.', 9);
+  annY += 4;
+  autoTable(doc, {
+    startY: annY,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.1, cellPadding: 3.4 },
+    headStyles: { fillColor: [67, 56, 202], textColor: 255, fontStyle: 'bold' },
+    head: [['Glossary', 'Definition']],
+    body: [
+      ['Raw gap', 'Difference between expenditure and funding before netting effects.'],
+      ['Net gap', 'Residual gap after reserves drawdown.'],
+      ['Structural gap', 'Recurring imbalance after one-off adjustments.'],
+      ['Savings delivery risk', 'Assumed achievable proportion of planned savings.'],
+    ],
+  });
+  annY = finalY(doc, annY) + 8;
+  autoTable(doc, {
+    startY: annY,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.1, cellPadding: 3.4 },
+    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
+    head: [['Data Definition', 'Current Value']],
+    body: [
+      ['Model version', MODEL_VERSION],
+      ['Generated', now.toLocaleString('en-GB')],
+      ['Savings proposals', `${savingsProposals.length}`],
+      ['Named reserves', `${baseline.namedReserves.length}`],
+      ['Audit excerpt', result.insights.slice(0, 2).map((i) => i.title).join(' | ') || 'No audit excerpt available'],
+    ],
+  });
+  annY = finalY(doc, annY) + 8;
+  annY = writeParagraph(
+    doc,
+    annY,
+    'Assurance and limitations wording: outputs are decision support and do not replace statutory officer judgement; formal reporting requires calibration to authority accounts and treasury strategy.',
+    8.7
+  );
+
+  addFooter(doc, authorityConfig.authorityName, now);
   doc.save(`MTFS_Premium_Brief_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
 }

@@ -591,12 +591,10 @@ export function runCalculations(
     const recurringCustomLines = customLineResults.filter((l) => l.isRecurring).reduce((s, l) => s + l.inflatedValue, 0);
     const nonRecurringCustomLines = customLinesTotalExpenditure - recurringCustomLines;
     const structuralGap = rawGap + oneOffDeliveredSavings - nonRecurringCustomLines;
-    // Planned reserves usage is treated as an annual drawdown cap when set (>0).
-    // At 0, model keeps automatic coverage behavior for backward compatibility.
-    const plannedReservesUseCap = assumptions.policy.reservesUsage > 0
-      ? assumptions.policy.reservesUsage
-      : Number.POSITIVE_INFINITY;
-    const reservesDrawdown = rawGap > 0 ? Math.min(rawGap, plannedReservesUseCap) : 0;
+    // Planned reserves use is an explicit annual mitigation amount.
+    // 0 means no planned reserves drawdown.
+    const plannedReservesUse = Math.max(0, assumptions.policy.reservesUsage);
+    const reservesDrawdown = rawGap > 0 ? Math.min(rawGap, plannedReservesUse) : 0;
     const netGap = rawGap - reservesDrawdown;
     cumulativeGap += rawGap;
 

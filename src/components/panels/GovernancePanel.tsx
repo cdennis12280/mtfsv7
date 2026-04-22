@@ -45,7 +45,7 @@ export function GovernancePanel() {
   };
 
   const handleOnePageBriefExport = () => {
-    exportOnePageMemberBriefPdf(result, authorityConfig);
+    exportOnePageMemberBriefPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
   };
 
   const handlePremiumMarkdownExport = () => {
@@ -169,7 +169,7 @@ export function GovernancePanel() {
           <CardTitle>Current Assumptions Log</CardTitle>
           <span className="text-[9px] text-[#4a6080]">Generated {new Date().toLocaleString('en-GB')}</span>
         </CardHeader>
-        <div className="grid grid-cols-2 gap-y-2 text-[10px]">
+        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[10px]">
           {[
             ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}% p.a.`],
             ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(1)}% p.a.`],

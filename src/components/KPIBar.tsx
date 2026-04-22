@@ -113,6 +113,10 @@ export function KPIBar() {
   const gapStatus = totalGap <= 0 ? 'good' : totalGap < 5000 ? 'warning' : 'critical';
   const reservesStatus = yearReservesExhausted ? 'critical' : reservesToNetBudget < 5 ? 'warning' : 'good';
   const ctStatus = councilTaxEquivalent < 2 ? 'good' : councilTaxEquivalent < 5 ? 'warning' : 'critical';
+  const year1Gap = result.years[0]?.rawGap ?? 0;
+  const ctSub = year1Gap > 0
+    ? (audienceMode === 'members' ? 'Y1 shortfall as CT %' : 'Y1 gap vs CT income')
+    : (audienceMode === 'members' ? 'No Y1 shortfall' : 'No Y1 gap (balanced/surplus)');
 
   return (
     <div className="flex border-b border-[rgba(99,179,237,0.07)] bg-[#0a1120]">
@@ -146,7 +150,7 @@ export function KPIBar() {
         icon={<Percent size={14} />}
         label={audienceMode === 'members' ? 'Council Tax Context' : 'CT Equivalent'}
         value={`${councilTaxEquivalent.toFixed(1)}%`}
-        sub={audienceMode === 'members' ? 'Y1 shortfall as CT %' : 'Y1 gap vs CT income'}
+        sub={ctSub}
         status={ctStatus}
         tooltip="Illustrative council tax percentage equivalent of the Year 1 shortfall."
       />

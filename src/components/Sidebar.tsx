@@ -262,7 +262,7 @@ export function Sidebar() {
             step={100}
             prefix="£"
             suffix="k/yr"
-            tooltip="Planned annual drawdown cap from reserves to contribute to budget gap mitigation. Set above 0 to limit yearly drawdown."
+            tooltip="Planned annual reserves drawdown to contribute to gap mitigation. 0 means no planned reserves use."
             onChange={(v) => updatePolicy('reservesUsage', v)}
           />
           <Toggle
