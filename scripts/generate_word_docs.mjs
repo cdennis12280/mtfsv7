@@ -93,7 +93,7 @@ function cover(title, subtitle) {
       spacing: { after: 200 },
     }),
     new Paragraph({
-      text: "MTFS Decision Support System (v7)",
+      text: "MTFS Financial Resilience Studio (v7)",
       alignment: AlignmentType.CENTER,
       spacing: { after: 800 },
     }),
@@ -229,7 +229,7 @@ async function generateQuickStartDoc() {
   const children = [
     ...cover(
       "Quick Start Guide",
-      "MTFS Decision Support System - Prescriptive User Procedure"
+      "MTFS Financial Resilience Studio - Prescriptive User Procedure"
     ),
     h("Document Purpose"),
     p("This guide is a practical, step-by-step procedure to move from first launch to governance-ready output in one controlled session."),

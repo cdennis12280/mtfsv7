@@ -55,7 +55,7 @@ export function Header() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="heading-display text-[14px] font-bold text-[#f0f4ff] tracking-tight">MTFS</span>
-                <span className="text-[13px] text-[#4a6080]">Decision Support</span>
+                <span className="text-[13px] text-[#4a6080]">Financial Resilience Studio</span>
                 <RichTooltip content="Medium Term Financial Strategy modelling workspace. Change assumptions and compare scenarios in real time." />
                 {authorityConfig.authorityName && authorityConfig.authorityName !== 'Example Unitary Authority' && (
                   <>

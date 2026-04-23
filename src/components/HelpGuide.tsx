@@ -116,7 +116,7 @@ export function HelpGuide() {
                 <BookOpen size={16} className="text-[#3b82f6]" />
                 <p className="text-[11px] uppercase tracking-widest text-[#8ca0c0] font-semibold">User Instruction Manual</p>
               </div>
-              <h1 className="heading-display text-[26px] font-bold text-[#f0f4ff] mt-2">MTFS Decision Support Help Guide</h1>
+              <h1 className="heading-display text-[26px] font-bold text-[#f0f4ff] mt-2">MTFS Financial Resilience Studio Help Guide</h1>
               <p className="text-[12px] text-[#8ca0c0] mt-2 max-w-4xl">
                 Comprehensive reference guide for every area of the app, including controls, data fields, outputs, workflow,
                 assumptions, accessibility options, governance usage and snapshot handling.
@@ -141,7 +141,7 @@ export function HelpGuide() {
 
         <SectionCard title="1. Purpose And Scope">
           <p>
-            The MTFS Decision Support app models a five-year medium-term financial strategy position and helps officers and elected members
+            The MTFS Financial Resilience Studio app models a five-year medium-term financial strategy position and helps officers and elected members
             understand the projected budget gap, structural sustainability, reserves resilience and delivery risk under different assumptions.
           </p>
           <p className="mt-2">

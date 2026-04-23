@@ -1,0 +1,9 @@
+name,description,category,grossValue,deliveryYear,achievementRate,isRecurring,ragStatus,responsibleOfficer,year1,year2,year3,year4,year5
+Directorate management redesign,Management layer reduction and spans of control optimisation,efficiency,6200,1,85,true,amber,Executive Director Resources,55,90,100,100,100
+Adult social care commissioning reset,Recommission home care and pathway controls,demand-management,7800,2,78,true,amber,Executive Director Adult Social Care,0,35,75,95,100
+Children placements edge-of-care model,Early intervention to reduce high-cost external placements,demand-management,5400,2,72,true,amber,Executive Director Children's Services,0,30,65,85,95
+Commercial estates optimisation,Asset reviews and market-rent resets,income,3100,1,90,true,green,Director of Assets and Regeneration,60,100,100,100,100
+Procurement category management,Corporate contracts retender and aggregation,procurement,4800,1,82,true,amber,Head of Procurement,50,85,100,100,100
+Service digital self-service programme,Automation and channel shift for transactional services,transformation,3600,2,76,true,amber,Chief Digital Officer,0,40,80,95,100
+Temporary vacancy and overtime controls,One-off strict establishment controls,service-reduction,2500,1,88,false,green,Director of HR and OD,80,20,0,0,0
+Fees and charges rationalisation,Review discretionary fees to recover full service cost,income,2900,1,86,true,green,Director of Finance,65,100,100,100,100

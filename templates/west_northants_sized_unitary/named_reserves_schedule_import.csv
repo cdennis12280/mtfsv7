@@ -1,0 +1,9 @@
+name,purpose,openingBalance,isEarmarked,minimumBalance,contribY1,contribY2,contribY3,contribY4,contribY5,drawY1,drawY2,drawY3,drawY4,drawY5
+General Fund Reserve,Core resilience and in-year volatility buffer,25000,false,18000,600,700,800,900,1000,1200,1300,1500,1700,1800
+Adult Social Care Demand Reserve,Demand spike and discharge pressure mitigation,14500,true,8000,300,300,350,350,350,1200,1250,1300,1350,1400
+Children's Services Placement Reserve,External placement and safeguarding cost volatility,12600,true,7000,250,250,300,300,300,1100,1200,1250,1300,1400
+Insurance and Litigation Reserve,Claims and legal exposure protection,9800,true,5500,180,180,180,180,180,700,750,800,850,900
+Transformation and Invest-to-Save Reserve,Fund digital and service redesign initiatives,17200,true,6000,450,450,500,500,500,2500,2300,2200,2000,1800
+Capital Risk and Financing Reserve,Interest rate and financing cost buffer,10900,true,5000,200,200,250,250,250,900,900,950,1000,1050
+Pensions and Workforce Reserve,Employer cost shocks and workforce transition support,7000,true,3500,140,140,140,140,140,450,500,550,600,650
+Climate and Asset Resilience Reserve,Asset adaptation and environmental response funding,6100,true,2500,200,200,200,220,220,350,350,400,450,500

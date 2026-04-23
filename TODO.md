@@ -1,4 +1,4 @@
-# MTFS Decision Support System — Development Backlog
+# MTFS Financial Resilience Studio — Development Backlog
 
 > **Section 151 Officer Enhancement Programme**
 > All items are designed to move the system from a demonstration tool to a production-grade statutory financial planning instrument.

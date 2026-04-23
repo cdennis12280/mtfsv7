@@ -1,4 +1,4 @@
-# MTFS Decision Support (v7)
+# MTFS Financial Resilience Studio (v7)
 
 Browser-based Medium Term Financial Strategy (MTFS) modelling workspace for local authority finance planning.
 
