@@ -85,6 +85,15 @@ export function OverviewPanel() {
     };
     return runCalculations(withoutMitigationAssumptions, baseline, []);
   }, [assumptions, baseline]);
+  const doNothingDelta = doNothingResult.totalGap - result.totalGap;
+  const year5Reserves = result.years[4]?.totalClosingReserves ?? 0;
+  const riskLabel = result.overallRiskScore >= 75
+    ? 'Critical'
+    : result.overallRiskScore >= 60
+      ? 'High'
+      : result.overallRiskScore >= 40
+        ? 'Medium'
+        : 'Low';
 
   const yearStory = years.map((y, index) => {
     const safetyPct = y.totalFunding > 0 ? (y.totalClosingReserves / y.totalFunding) * 100 : 0;
@@ -145,8 +154,8 @@ export function OverviewPanel() {
             </p>
             <p className="text-[12px] text-[#f0f4ff] mt-1">
               {audienceMode === 'members'
-                ? `Current plan shortfall across 5 years: ${fmtK(result.totalGap)}. If no action was taken, the shortfall would be ${fmtK(doNothingResult.totalGap)}.`
-                : `Current 5-year gap ${fmtK(result.totalGap)} vs do-nothing ${fmtK(doNothingResult.totalGap)}.`}
+                ? `Current 5-year position: ${fmtK(result.totalGap)} (structural: ${fmtK(result.totalStructuralGap)}). Compared with do-nothing, mitigations improve the outlook by ${fmtK(doNothingDelta)}; Year 5 reserves are ${fmtK(year5Reserves)} and risk is ${riskLabel} (${result.overallRiskScore.toFixed(0)}/100).`
+                : `5-year affordability: ${fmtK(result.totalGap)} (structural ${fmtK(result.totalStructuralGap)}), requiring ${fmtK(result.requiredSavingsToBalance)} recurring annual action. Mitigation effect vs do-nothing: ${fmtK(doNothingDelta)}; Year 5 reserves ${fmtK(year5Reserves)}; risk ${riskLabel} (${result.overallRiskScore.toFixed(0)}/100).`}
             </p>
           </div>
         </Card>
