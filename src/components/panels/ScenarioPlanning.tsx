@@ -10,11 +10,12 @@ import { Plus, Trash2, Download, TrendingUp, TrendingDown, Target, Upload, Save,
 import { RichTooltip } from '../ui/RichTooltip';
 import { exportDecisionPackPdf } from '../../utils/decisionPackPdf';
 import { downloadSnapshotTemplatePack } from '../../utils/snapshotTemplatePack';
+import { runCalculations } from '../../engine/calculations';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
-  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 const typeIcons = {
@@ -36,6 +37,8 @@ export function ScenarioPlanning() {
     scenarios,
     result,
     assumptions,
+    baseline,
+    savingsProposals,
     saveScenario,
     deleteScenario,
     loadScenario,
@@ -61,6 +64,10 @@ export function ScenarioPlanning() {
   const [decisionA, setDecisionA] = useState('current');
   const [decisionB, setDecisionB] = useState('');
   const [decisionC, setDecisionC] = useState('');
+  const resolvedScenarios = scenarios.map((s) => ({
+    ...s,
+    result: runCalculations(s.assumptions, baseline, savingsProposals),
+  }));
 
   const decisionOptions = [
     {
@@ -71,7 +78,7 @@ export function ScenarioPlanning() {
       assumptions,
       result,
     },
-    ...scenarios.map((s) => ({
+    ...resolvedScenarios.map((s) => ({
       id: s.id,
       name: s.name,
       description: s.description,
@@ -150,27 +157,39 @@ export function ScenarioPlanning() {
   // Build comparison chart data
   const allScenarios = [
     { id: 'current', name: 'Current', result, color: '#06b6d4' },
-    ...scenarios.map((s) => ({ id: s.id, name: s.name, result: s.result, color: s.color })),
+    ...resolvedScenarios.map((s) => ({ id: s.id, name: s.name, result: s.result, color: s.color })),
   ];
+  const allScenariosWithSeries = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    return allScenarios.map((sc) => {
+      const normalized = sc.name.trim().toLowerCase();
+      const seen = (counts.get(normalized) ?? 0) + 1;
+      counts.set(normalized, seen);
+      return {
+        ...sc,
+        seriesKey: seen === 1 ? sc.name : `${sc.name} (${seen})`,
+      };
+    });
+  }, [allScenarios]);
 
   const years = result.years.map((y) => y.label);
   const gapCompareData = years.map((yr, i) => {
     const row: Record<string, number | string> = { year: yr };
-    allScenarios.forEach((sc) => {
-      row[sc.name] = Math.round(sc.result.years[i]?.rawGap ?? 0);
+    allScenariosWithSeries.forEach((sc) => {
+      row[sc.seriesKey] = Math.round(sc.result.years[i]?.rawGap ?? 0);
     });
     return row;
   });
 
   const reservesCompareData = years.map((yr, i) => {
     const row: Record<string, number | string> = { year: yr };
-    allScenarios.forEach((sc) => {
-      row[sc.name] = Math.round(sc.result.years[i]?.totalClosingReserves ?? 0);
+    allScenariosWithSeries.forEach((sc) => {
+      row[sc.seriesKey] = Math.round(sc.result.years[i]?.totalClosingReserves ?? 0);
     });
     return row;
   });
 
-  const compareScenario = scenarios.find((s) => s.id === compareScenarioId) ?? scenarios[0];
+  const compareScenario = resolvedScenarios.find((s) => s.id === compareScenarioId) ?? resolvedScenarios[0];
   const decomposition = compareScenario
     ? [
       {
@@ -452,7 +471,7 @@ export function ScenarioPlanning() {
         </div>
       </Card>
 
-      {scenarios.length === 0 && (
+      {resolvedScenarios.length === 0 && (
         <div className="rounded-xl border border-dashed border-[rgba(99,179,237,0.15)] p-8 text-center">
           <Target size={24} className="text-[#4a6080] mx-auto mb-2" />
           <p className="text-[12px] text-[#4a6080]">No saved scenarios yet</p>
@@ -462,7 +481,7 @@ export function ScenarioPlanning() {
         </div>
       )}
 
-      {scenarios.length > 0 && (
+      {resolvedScenarios.length > 0 && (
         <>
           <Card>
             <CardHeader>
@@ -478,7 +497,7 @@ export function ScenarioPlanning() {
                   title="Select a saved scenario to compare against the current assumptions."
                   className="bg-[#080c14] border border-[rgba(99,179,237,0.2)] rounded-md px-2 py-1 text-[10px] text-[#f0f4ff]"
                 >
-                  {scenarios.map((sc) => (
+                  {resolvedScenarios.map((sc) => (
                     <option key={sc.id} value={sc.id}>{sc.name}</option>
                   ))}
                 </select>
@@ -510,7 +529,7 @@ export function ScenarioPlanning() {
 
           {/* Scenario Cards */}
           <div className="grid grid-cols-2 gap-3">
-            {scenarios.map((sc) => (
+            {resolvedScenarios.map((sc) => (
               <Card
                 key={sc.id}
                 className="hover:border-[rgba(99,179,237,0.2)] transition-colors"
@@ -595,7 +614,7 @@ export function ScenarioPlanning() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
                   <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => `${(v / 1000).toFixed(1)}m`} />
+                    tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
                   <Tooltip
                     contentStyle={{
                       background: '#1a2540',
@@ -608,11 +627,12 @@ export function ScenarioPlanning() {
                     formatter={(value: unknown) => [fmtK(value as number), '']}
                   />
                   <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0' }} />
-                  {allScenarios.map((sc) => (
+                  {allScenariosWithSeries.map((sc) => (
                     <Line
                       key={sc.id}
                       type="monotone"
-                      dataKey={sc.name}
+                      dataKey={sc.seriesKey}
+                      name={sc.seriesKey}
                       stroke={sc.color}
                       strokeWidth={2}
                       dot={{ r: 3, fill: sc.color }}
@@ -639,7 +659,7 @@ export function ScenarioPlanning() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
                   <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => `£${(v / 1000).toFixed(1)}m`} />
+                    tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
                   <Tooltip
                     contentStyle={{
                       background: '#1a2540',
@@ -652,11 +672,12 @@ export function ScenarioPlanning() {
                     formatter={(value: unknown) => [fmtK(value as number), '']}
                   />
                   <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0' }} />
-                  {allScenarios.map((sc) => (
+                  {allScenariosWithSeries.map((sc) => (
                     <Line
                       key={sc.id}
                       type="monotone"
-                      dataKey={sc.name}
+                      dataKey={sc.seriesKey}
+                      name={sc.seriesKey}
                       stroke={sc.color}
                       strokeWidth={2}
                       strokeDasharray={sc.id === 'current' ? undefined : '6 3'}
@@ -699,7 +720,7 @@ export function ScenarioPlanning() {
                     </td>
                     <td className="py-2 text-right mono">{result.overallRiskScore.toFixed(0)}</td>
                   </tr>
-                  {scenarios.map((sc) => {
+                  {resolvedScenarios.map((sc) => {
                     const deltaGap = sc.result.totalGap - result.totalGap;
                     const deltaColor = deltaGap > 0 ? '#ef4444' : '#10b981';
                     return (

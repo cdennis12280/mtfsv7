@@ -569,6 +569,9 @@ export function BaselineEditor() {
             <div className="text-[10px] text-[#4a6080] leading-relaxed mb-3">
               Enter prior-year actuals to validate baseline inputs. Variances above 15% are flagged for S151 review.
             </div>
+            <div className="text-[10px] text-[#8ca0c0] leading-relaxed mb-3">
+              These validation comparator values are diagnostic only and do not change model calculations.
+            </div>
             <div className="space-y-2">
               {[
                 ['Council Tax', 'councilTax'],

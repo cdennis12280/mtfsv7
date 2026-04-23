@@ -22,7 +22,7 @@ const PAGE_BOTTOM_MARGIN = 42;
 function fmtK(v: number) {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
-  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 function riskBand(score: number) {

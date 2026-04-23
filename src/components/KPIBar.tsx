@@ -10,7 +10,7 @@ function fmt(n: number, prefix = '£', suffix = 'k') {
   const abs = Math.abs(n);
   const sign = n < 0 ? '-' : '';
   if (abs >= 1_000) {
-    return `${sign}${prefix}${(abs / 1_000).toFixed(1)}m`;
+    return `${sign}${prefix}${(abs / 1_000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`;
   }
   return `${sign}${prefix}${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}${suffix}`;
 }

@@ -447,7 +447,7 @@ export function runCalculations(
       ? recommendedMinimumReserves
       : baseline.reservesAdequacyMethodology.method === 'pct_of_net_budget'
         ? (baseNetBudget * baseline.reservesAdequacyMethodology.pctOfNetBudget) / 100
-        : baseline.reservesAdequacyMethodology.fixedMinimum;
+        : baseline.reservesMinimumThreshold;
 
   let gfBalance = baseline.generalFundReserves;
   let emBalance = baseline.earmarkedReserves;
@@ -495,14 +495,17 @@ export function runCalculations(
       : 0;
     const feesAndCharges = baseline.feesAndCharges * Math.pow(1 + assumptions.funding.feesChargesElasticity / 100, y) * deflator(y) + incomeGenerationIncome;
 
-    let coreGrants = baseline.coreGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y) * deflator(y);
+    const baseCoreGrants = baseline.coreGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y) * deflator(y);
+    let coreGrants = baseCoreGrants;
     if (baseline.grantSchedule.length > 0) {
       const scheduledGrants = baseline.grantSchedule.reduce((sum, grant) => {
         if (grant.endYear < y) return sum;
         if (grant.endYear === y && y < YEARS) grantsExpiringInYears.add(label);
         return sum + (grant.value * grantCertaintyFactor(grant.certainty));
       }, 0);
-      coreGrants = scheduledGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y - 1) * deflator(y);
+      const scheduledGrantsWithVariation = scheduledGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y - 1) * deflator(y);
+      // Grant schedule entries are treated as additional grant lines layered over the core-grants baseline.
+      coreGrants = baseCoreGrants + scheduledGrantsWithVariation;
     }
     const totalFunding = councilTax + businessRates + coreGrants + feesAndCharges;
 
@@ -584,6 +587,16 @@ export function runCalculations(
       const deliveryRamp = Math.min(0.6 + y * 0.1, 1.0);
       deliveredSavings = assumptions.policy.annualSavingsTarget * (assumptions.expenditure.savingsDeliveryRisk / 100) * deliveryRamp * y;
       recurringDeliveredSavings = deliveredSavings;
+    }
+
+    // Policy lever: when social care protection is enabled, reduce effective savings to
+    // avoid implicitly applying equal cuts to protected ASC demand-led spend.
+    if (assumptions.policy.socialCareProtection && grossExpenditureBeforeSavings > 0 && deliveredSavings > 0) {
+      const ascShare = Math.max(0, Math.min(0.95, ascPressure / grossExpenditureBeforeSavings));
+      const retainedSavingsFactor = 1 - ascShare;
+      deliveredSavings *= retainedSavingsFactor;
+      recurringDeliveredSavings *= retainedSavingsFactor;
+      oneOffDeliveredSavings *= retainedSavingsFactor;
     }
 
     const totalExpenditure = Math.max(0, grossExpenditureBeforeSavings - deliveredSavings);

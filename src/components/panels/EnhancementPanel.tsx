@@ -730,15 +730,15 @@ export function EnhancementPanel() {
         </CardHeader>
         <div className="grid grid-cols-4 gap-2">
           <button className="px-3 py-2 rounded bg-[rgba(59,130,246,0.12)] text-[#3b82f6] text-[11px] font-semibold" onClick={() => applyNamedStressTest('pay_settlement_plus2')} title="Increase pay award assumption by +2 percentage points.">
-            Statutory Pay +2%
+            Pay Assumption +2pp
           </button>
           <button className="px-3 py-2 rounded bg-[rgba(245,158,11,0.12)] text-[#f59e0b] text-[11px] font-semibold" onClick={() => applyNamedStressTest('asc_demand_shock')} title="Apply a +15% ASC demand shock to stress-test demand exposure.">
-            ASC Shock +15%
+            ASC Assumption +15pp
           </button>
-          <button className="px-3 py-2 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] text-[11px] font-semibold" onClick={() => applyNamedStressTest('grant_reduction_year2')} title="Apply grant reduction shock from year 2.">
-            Grant Reduction
+          <button className="px-3 py-2 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] text-[11px] font-semibold" onClick={() => applyNamedStressTest('grant_reduction_year2')} title="Apply an all-years grant variation reduction of 3 percentage points.">
+            Grant Variation -3pp
           </button>
-          <button className="px-3 py-2 rounded bg-[rgba(239,68,68,0.2)] text-[#ef4444] text-[11px] font-bold border border-[rgba(239,68,68,0.35)]" onClick={() => applyNamedStressTest('worst_case')} title="Apply combined adverse shocks for maximum credible downside scenario.">
+          <button className="px-3 py-2 rounded bg-[rgba(239,68,68,0.2)] text-[#ef4444] text-[11px] font-bold border border-[rgba(239,68,68,0.35)]" onClick={() => applyNamedStressTest('worst_case')} title="Apply combined all-years adverse assumption shocks for downside testing.">
             Combined Worst Case
           </button>
         </div>

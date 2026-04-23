@@ -12,7 +12,7 @@ import { DEFAULT_BASELINE } from '../../engine/calculations';
 function fmtK(v: number) {
   const sign = v > 0 ? '+' : '';
   const abs = Math.abs(v);
-  return `${sign}${v < 0 ? '-' : ''}£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `${sign}${v < 0 ? '-' : ''}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 const RISK_COLORS: Record<string, string> = {

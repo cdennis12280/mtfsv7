@@ -222,6 +222,10 @@ export function HighValuePanel() {
             <p className="text-[#4a6080] mb-1">ASC Precept %</p>
             <input type="number" className="w-full input" value={councilTaxBaseConfig.ascPreceptPct} onChange={(e) => updateCouncilTaxBaseConfig({ ascPreceptPct: Number(e.target.value) || 0 })} title="Adult social care precept percentage." />
           </div>
+          <div>
+            <p className="text-[#4a6080] mb-1">Parish Precepts (£k)</p>
+            <input type="number" className="w-full input" value={councilTaxBaseConfig.parishPrecepts} onChange={(e) => updateCouncilTaxBaseConfig({ parishPrecepts: Number(e.target.value) || 0 })} title="Total parish and town precepts in thousands of pounds." />
+          </div>
         </div>
       </Card>
 
@@ -253,6 +257,9 @@ export function HighValuePanel() {
           </div>
         </CardHeader>
         <div className="space-y-2">
+          <p className="text-[10px] text-[#4a6080]">
+            Grant schedule lines are added on top of the baseline <span className="text-[#8ca0c0] font-semibold">Core Grants</span> value.
+          </p>
           {grantImportStatus.type !== 'idle' && (
             <div
               className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]"
@@ -331,6 +338,14 @@ export function HighValuePanel() {
             <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
               <p className="text-[10px] text-[#8ca0c0]">Unit Cost 65+ (£)</p>
               <input className="input text-right" type="number" value={ascCohortModel.unitCost65plus} onChange={(e) => updateAscCohortModel({ unitCost65plus: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Growth 18-64 (%)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.growth18to64} onChange={(e) => updateAscCohortModel({ growth18to64: Number(e.target.value) || 0 })} />
+            </div>
+            <div className="grid grid-cols-[1fr_120px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Growth 65+ (%)</p>
+              <input className="input text-right" type="number" value={ascCohortModel.growth65plus} onChange={(e) => updateAscCohortModel({ growth65plus: Number(e.target.value) || 0 })} />
             </div>
           </div>
         </Card>

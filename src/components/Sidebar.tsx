@@ -36,6 +36,7 @@ function AuthorityConfigSection() {
             { label: 'Chief Executive', key: 'chiefExecutive' as const, placeholder: 'e.g. Chief Executive' },
             { label: 'Authority Type', key: 'authorityType' as const, placeholder: 'e.g. Unitary Authority' },
             { label: 'Reporting Period', key: 'reportingPeriod' as const, placeholder: 'e.g. 2025/26 – 2029/30' },
+            { label: 'Report Date', key: 'reportDate' as const, placeholder: 'YYYY-MM-DD' },
             { label: 'Population', key: 'population' as const, placeholder: 'e.g. 320000' },
             { label: 'Strategic Priority 1', key: 'strategicPriority1' as const, placeholder: 'e.g. Protect vulnerable residents' },
             { label: 'Strategic Priority 2', key: 'strategicPriority2' as const, placeholder: 'e.g. Inclusive local growth' },
@@ -44,7 +45,7 @@ function AuthorityConfigSection() {
             <div key={key}>
               <label className="text-[10px] text-[#4a6080] block mb-1">{label}</label>
               <input
-                type={key === 'population' ? 'number' : 'text'}
+                type={key === 'population' ? 'number' : key === 'reportDate' ? 'date' : 'text'}
                 value={authorityConfig[key]}
                 placeholder={placeholder}
                 onChange={(e) => setAuthorityConfig({ [key]: key === 'population' ? Number(e.target.value) || 0 : e.target.value })}

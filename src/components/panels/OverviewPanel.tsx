@@ -13,7 +13,7 @@ import { RichTooltip } from '../ui/RichTooltip';
 function fmtK(v: number) {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
-  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 interface TooltipPoint {
@@ -290,7 +290,7 @@ export function OverviewPanel() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
                 <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => `£${(v / 1000).toFixed(0)}m`} />
+                  tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="Funding" stroke="#3b82f6" strokeWidth={2.5}
                   fill="url(#ovGradF)" dot={{ r: 3, fill: '#3b82f6' }} activeDot={{ r: 5 }} />
@@ -316,7 +316,7 @@ export function OverviewPanel() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" vertical={false} />
                   <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => `${(v / 1000).toFixed(1)}m`} />
+                    tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
                   <Tooltip
                     contentStyle={{ background: '#1a2540', border: '1px solid rgba(99,179,237,0.2)', borderRadius: 8, fontSize: 11 }}
                     labelStyle={{ color: '#8ca0c0' }}
@@ -353,7 +353,7 @@ export function OverviewPanel() {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
                   <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                    tickFormatter={(v) => `£${(v / 1000).toFixed(0)}m`} />
+                    tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
                   <Tooltip
                     contentStyle={{ background: '#1a2540', border: '1px solid rgba(99,179,237,0.2)', borderRadius: 8, fontSize: 11 }}
                     labelStyle={{ color: '#8ca0c0' }}

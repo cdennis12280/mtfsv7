@@ -10,7 +10,7 @@ import { DEFAULT_BASELINE } from '../../engine/calculations';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
-  return `£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 interface TooltipPoint {
@@ -72,9 +72,14 @@ export function ReservesAnalysis() {
     })),
   ];
 
+  const getYearTotalDrawdown = (year: (typeof years)[number]) => {
+    const namedDrawdown = (year.namedReserveResults ?? []).reduce((sum, reserve) => sum + (reserve.drawdown || 0), 0);
+    return (year.reservesDrawdown || 0) + namedDrawdown;
+  };
+
   const drawdownData = years.map((y) => ({
     year: y.label,
-    drawdown: Math.round(y.reservesDrawdown),
+    drawdown: Math.round(getYearTotalDrawdown(y)),
     closing: Math.round(y.totalClosingReserves),
   }));
 
@@ -148,7 +153,7 @@ export function ReservesAnalysis() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
               <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => `£${(v / 1000).toFixed(0)}m`} />
+                tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
               <ReferenceLine
@@ -183,7 +188,7 @@ export function ReservesAnalysis() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" vertical={false} />
               <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => `${(v / 1000).toFixed(1)}m`} />
+                tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
               <Bar dataKey="drawdown" name="Drawdown" fill="#f59e0b" fillOpacity={0.8} radius={[3, 3, 0, 0]} />
@@ -214,12 +219,13 @@ export function ReservesAnalysis() {
               {years.map((y) => {
                 const vsThreshold = y.totalClosingReserves - minThreshold;
                 const ok = vsThreshold >= 0;
+                const totalDrawdown = getYearTotalDrawdown(y);
                 return (
                   <tr key={y.year} className="border-b border-[rgba(99,179,237,0.04)] hover:bg-[rgba(99,179,237,0.02)]">
                     <td className="py-2 font-semibold text-[#f0f4ff] pr-4">{y.label}</td>
                     <td className="py-2 text-right mono text-[#8ca0c0] pr-4">{fmtK(y.totalOpeningReserves)}</td>
                     <td className="py-2 text-right mono text-[#f59e0b] pr-4">
-                      {y.reservesDrawdown > 0 ? `-${fmtK(y.reservesDrawdown)}` : '—'}
+                      {totalDrawdown > 0 ? `-${fmtK(totalDrawdown)}` : '—'}
                     </td>
                     <td className="py-2 text-right mono font-semibold text-[#f0f4ff] pr-4">{fmtK(y.totalClosingReserves)}</td>
                     <td className={`py-2 text-right mono pr-4 ${ok ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>

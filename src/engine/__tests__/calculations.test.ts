@@ -124,3 +124,125 @@ describe('baseline csv parser', () => {
     expect(parsed.baseline?.feesAndCharges).toBe(21000);
   });
 });
+
+describe('baseline input connectivity', () => {
+  it('core baseline budget lines feed funding and expenditure outputs', () => {
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), clone(DEFAULT_BASELINE), []);
+
+    const withCouncilTax = clone(DEFAULT_BASELINE);
+    withCouncilTax.councilTax += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withCouncilTax, []).years[0].totalFunding).toBeGreaterThan(base.years[0].totalFunding);
+
+    const withBusinessRates = clone(DEFAULT_BASELINE);
+    withBusinessRates.businessRates += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withBusinessRates, []).years[0].totalFunding).toBeGreaterThan(base.years[0].totalFunding);
+
+    const withCoreGrants = clone(DEFAULT_BASELINE);
+    withCoreGrants.coreGrants += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withCoreGrants, []).years[0].totalFunding).toBeGreaterThan(base.years[0].totalFunding);
+
+    const withFees = clone(DEFAULT_BASELINE);
+    withFees.feesAndCharges += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withFees, []).years[0].totalFunding).toBeGreaterThan(base.years[0].totalFunding);
+
+    const withPay = clone(DEFAULT_BASELINE);
+    withPay.pay += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withPay, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+
+    const withNonPay = clone(DEFAULT_BASELINE);
+    withNonPay.nonPay += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withNonPay, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+
+    const withAsc = clone(DEFAULT_BASELINE);
+    withAsc.ascDemandLed += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withAsc, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+
+    const withCsc = clone(DEFAULT_BASELINE);
+    withCsc.cscDemandLed += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withCsc, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+
+    const withOther = clone(DEFAULT_BASELINE);
+    withOther.otherServiceExp += 10_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withOther, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+  });
+
+  it('reserve baseline fields feed opening reserves and threshold outputs', () => {
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), clone(DEFAULT_BASELINE), []);
+
+    const withGF = clone(DEFAULT_BASELINE);
+    withGF.generalFundReserves += 5_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withGF, []).years[0].totalOpeningReserves).toBeGreaterThan(base.years[0].totalOpeningReserves);
+
+    const withEM = clone(DEFAULT_BASELINE);
+    withEM.earmarkedReserves += 5_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withEM, []).years[0].totalOpeningReserves).toBeGreaterThan(base.years[0].totalOpeningReserves);
+
+    const withThreshold = clone(DEFAULT_BASELINE);
+    withThreshold.reservesMinimumThreshold += 3_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withThreshold, []).effectiveMinimumReservesThreshold).toBeGreaterThan(base.effectiveMinimumReservesThreshold);
+  });
+
+  it('custom line financial inputs influence model outputs', () => {
+    const withCustomLine = clone(DEFAULT_BASELINE);
+    withCustomLine.customServiceLines = [{
+      id: 'csl-1',
+      name: 'Test line',
+      category: 'non-pay',
+      baseValue: 10_000,
+      inflationDriver: 'cpi',
+      manualInflationRate: 0,
+      demandGrowthRate: 0,
+      isRecurring: true,
+      notes: '',
+    }];
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), withCustomLine, []);
+
+    const withHigherBaseValue = clone(withCustomLine);
+    withHigherBaseValue.customServiceLines[0].baseValue = 15_000;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withHigherBaseValue, []).years[0].totalExpenditure).toBeGreaterThan(base.years[0].totalExpenditure);
+
+    const withManualRate = clone(withCustomLine);
+    withManualRate.customServiceLines[0].inflationDriver = 'manual';
+    withManualRate.customServiceLines[0].manualInflationRate = 8;
+    const withLowerManualRate = clone(withCustomLine);
+    withLowerManualRate.customServiceLines[0].inflationDriver = 'manual';
+    withLowerManualRate.customServiceLines[0].manualInflationRate = 1;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withManualRate, []).years[4].totalExpenditure)
+      .toBeGreaterThan(runCalculations(clone(DEFAULT_ASSUMPTIONS), withLowerManualRate, []).years[4].totalExpenditure);
+
+    const withHigherDemand = clone(withCustomLine);
+    withHigherDemand.customServiceLines[0].demandGrowthRate = 4;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), withHigherDemand, []).years[4].totalExpenditure).toBeGreaterThan(base.years[4].totalExpenditure);
+
+    const oneOffLine = clone(withCustomLine);
+    oneOffLine.customServiceLines[0].isRecurring = false;
+    expect(runCalculations(clone(DEFAULT_ASSUMPTIONS), oneOffLine, []).totalStructuralGap)
+      .toBeLessThan(runCalculations(clone(DEFAULT_ASSUMPTIONS), withCustomLine, []).totalStructuralGap);
+  });
+
+  it('custom line metadata fields are non-financial and do not change calculated totals', () => {
+    const baseLine = clone(DEFAULT_BASELINE);
+    baseLine.customServiceLines = [{
+      id: 'csl-1',
+      name: 'Line A',
+      category: 'non-pay',
+      baseValue: 10_000,
+      inflationDriver: 'cpi',
+      manualInflationRate: 0,
+      demandGrowthRate: 0,
+      isRecurring: true,
+      notes: 'Note A',
+    }];
+    const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), baseLine, []);
+
+    const metadataChanged = clone(baseLine);
+    metadataChanged.customServiceLines[0].name = 'Line B';
+    metadataChanged.customServiceLines[0].category = 'income';
+    metadataChanged.customServiceLines[0].notes = 'Note B';
+    const changed = runCalculations(clone(DEFAULT_ASSUMPTIONS), metadataChanged, []);
+
+    expect(changed.totalGap).toBe(base.totalGap);
+    expect(changed.totalStructuralGap).toBe(base.totalStructuralGap);
+    expect(changed.years[0].totalExpenditure).toBe(base.years[0].totalExpenditure);
+  });
+});

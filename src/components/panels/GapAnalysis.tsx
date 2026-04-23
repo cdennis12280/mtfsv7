@@ -10,7 +10,7 @@ import { AlertTriangle, CheckCircle } from 'lucide-react';
 function fmtK(v: number) {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
-  if (abs >= 1000) return `${sign}£${(abs / 1000).toFixed(1)}m`;
+  if (abs >= 1000) return `${sign}£${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`;
   return `${sign}£${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`;
 }
 
@@ -129,7 +129,7 @@ export function GapAnalysis() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
               <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                tickFormatter={(v) => `£${(v / 1000).toFixed(0)}m`} />
+                tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
               <Area
@@ -158,7 +158,7 @@ export function GapAnalysis() {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" vertical={false} />
                 <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}m`} />
+                  tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
                 <Tooltip content={<CustomTooltip />} />
                 <ReferenceLine y={0} stroke="rgba(99,179,237,0.3)" strokeDasharray="4 4" />
                 <Bar dataKey="gap" name="Gross Gap" radius={[3, 3, 0, 0]}>
@@ -194,7 +194,7 @@ export function GapAnalysis() {
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" horizontal={false} />
                 <XAxis type="number" tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={(v) => `${v > 0 ? '+' : ''}${(v / 1000).toFixed(1)}m`} />
+                  tickFormatter={(v) => `${v > 0 ? '+' : ''}${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
                 <YAxis type="category" dataKey="name" tick={{ fill: '#8ca0c0', fontSize: 10 }} axisLine={false} tickLine={false} width={80} />
                 <Tooltip
                   content={({ active, payload, label }: ChartTooltipProps) => {

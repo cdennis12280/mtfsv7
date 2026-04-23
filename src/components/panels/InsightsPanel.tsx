@@ -149,7 +149,7 @@ export function InsightsPanel() {
             <>
               <p>
                 The MTFS projects a <span className="text-[#ef4444] font-semibold">
-                  cumulative budget gap of £{(result.totalGap / 1000).toFixed(1)}m
+                  cumulative budget gap of £{(result.totalGap / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m
                 </span> over the five-year period.
                 {result.structuralDeficitFlag
                   ? ' This gap has structural characteristics — recurring expenditure exceeds recurring funding — and cannot be sustainably managed through reserves use alone.'
@@ -159,7 +159,7 @@ export function InsightsPanel() {
                 <p>
                   To balance the MTFS, the authority must deliver average annual savings of{' '}
                   <span className="text-[#f59e0b] font-semibold">
-                    £{(result.requiredSavingsToBalance / 1000).toFixed(1)}m per annum
+                    £{(result.requiredSavingsToBalance / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m per annum
                   </span>, representing{' '}
                   <span className="font-semibold text-[#f0f4ff]">{result.savingsAsBudgetPct.toFixed(1)}%</span> of total expenditure.
                 </p>

@@ -57,19 +57,21 @@ function findAssociatedLabel(el: HTMLElement): string {
   return el.textContent?.trim() ?? '';
 }
 
-function annotateTooltips(root: HTMLElement) {
+function annotateTooltipElement(el: HTMLElement) {
+  if (el.getAttribute('title')) return;
+  const explicitTip = el.dataset.tip;
+  if (explicitTip) {
+    el.setAttribute('title', explicitTip);
+    return;
+  }
+  const source = findAssociatedLabel(el);
+  const tip = inferTooltipText(source);
+  if (tip) el.setAttribute('title', tip);
+}
+
+function annotateTooltips(root: ParentNode) {
   const candidates = root.querySelectorAll<HTMLElement>('button,input,select,textarea');
-  candidates.forEach((el) => {
-    if (el.getAttribute('title')) return;
-    const explicitTip = el.dataset.tip;
-    if (explicitTip) {
-      el.setAttribute('title', explicitTip);
-      return;
-    }
-    const source = findAssociatedLabel(el);
-    const tip = inferTooltipText(source);
-    if (tip) el.setAttribute('title', tip);
-  });
+  candidates.forEach((el) => annotateTooltipElement(el));
 }
 
 // Reserves panel — combines depletion charts + named reserves manager
@@ -123,10 +125,31 @@ export default function App() {
     const root = document.getElementById('root');
     if (!root) return;
     annotateTooltips(root);
-    const observer = new MutationObserver(() => annotateTooltips(root));
+    let rafId = 0;
+    const pending = new Set<HTMLElement>();
+    const flush = () => {
+      rafId = 0;
+      pending.forEach((node) => annotateTooltips(node));
+      pending.clear();
+    };
+    const queueNode = (node: Node) => {
+      if (node instanceof HTMLElement) pending.add(node);
+    };
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(queueNode);
+      }
+      if (pending.size === 0) return;
+      if (rafId !== 0) return;
+      rafId = window.requestAnimationFrame(flush);
+    });
     observer.observe(root, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [activeTab, accessibilityPreset, densityMode]);
+    return () => {
+      observer.disconnect();
+      pending.clear();
+      if (rafId !== 0) window.cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   return (
     <div className={`app-shell preset-${accessibilityPreset} density-${densityMode} flex h-screen overflow-hidden`} style={{ background: '#080c14' }}>

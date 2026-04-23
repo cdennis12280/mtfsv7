@@ -9,11 +9,23 @@ const MODEL_VERSION = 'MTFS DSS v7.0';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
-  return `GBP ${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `GBP ${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+}
+
+function fmtChartValue(v: number) {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  return `${sign}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 function sanitize(input: string) {
   return (input || 'authority').replace(/[^a-zA-Z0-9]+/g, '_');
+}
+
+function resolveReportDate(authorityConfig: AuthorityConfig, fallback: Date): Date {
+  if (!authorityConfig.reportDate) return fallback;
+  const parsed = new Date(authorityConfig.reportDate);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
 function riskBand(score: number) {
@@ -104,6 +116,13 @@ function drawCompactTrendBars(
     doc.setFontSize(7.6);
     doc.setTextColor(71, 85, 105);
     doc.text(labels[idx], x + barW / 2, chartTop + chartHeight + 10, { align: 'center' });
+
+    // Explicit financial value label for governance readability.
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(15, 23, 42);
+    const labelY = Math.max(chartTop + 8, y0 - 3);
+    doc.text(fmtChartValue(v), x + barW / 2, labelY, { align: 'center' });
   });
   doc.setDrawColor(203, 213, 225);
   doc.line(PAGE_MARGIN, chartTop + chartHeight, PAGE_MARGIN + width, chartTop + chartHeight);
@@ -190,6 +209,7 @@ export function exportCommitteeReportPdf(
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
+  const reportDate = resolveReportDate(authorityConfig, now);
   const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
   const baseScenario = scenarioRows[0].result;
 
@@ -216,6 +236,7 @@ export function exportCommitteeReportPdf(
       ['Reporting Period', authorityConfig.reportingPeriod || `${now.getFullYear()}/${String(now.getFullYear() + 1).slice(2)} - ${now.getFullYear() + 4}/${String(now.getFullYear() + 5).slice(2)}`],
       ['Section 151 Officer', authorityConfig.section151Officer || 'Not specified'],
       ['Chief Executive', authorityConfig.chiefExecutive || 'Not specified'],
+      ['Report Date', reportDate.toLocaleDateString('en-GB')],
       ['Generated', now.toLocaleString('en-GB')],
     ],
   });
@@ -453,7 +474,7 @@ export function exportCommitteeReportPdf(
     headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
     head: [['Data Definition', 'Current Value / Source']],
     body: [
-      ['Assumption set', `${MODEL_VERSION} / Generated ${now.toLocaleString('en-GB')}`],
+      ['Assumption set', `${MODEL_VERSION} / Report Date ${reportDate.toLocaleDateString('en-GB')} / Generated ${now.toLocaleString('en-GB')}`],
       ['Savings proposals', `${savingsProposals.length} lines`],
       ['Named reserves', `${baseline.namedReserves.length} lines`],
       ['Custom service lines', `${baseline.customServiceLines.length} lines`],
@@ -482,6 +503,7 @@ export function exportOnePageMemberBriefPdf(
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
+  const reportDate = resolveReportDate(authorityConfig, now);
   const y1 = result.years[0];
   const y5 = result.years[4];
   const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
@@ -495,7 +517,7 @@ export function exportOnePageMemberBriefPdf(
   doc.text('One-Page MTFS Member Brief', PAGE_MARGIN, 48);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
-  doc.text(`${authorityConfig.authorityName} · ${authorityConfig.reportingPeriod} · ${now.toLocaleDateString('en-GB')}`, PAGE_MARGIN, 68);
+  doc.text(`${authorityConfig.authorityName} · ${authorityConfig.reportingPeriod} · ${reportDate.toLocaleDateString('en-GB')}`, PAGE_MARGIN, 68);
 
   let y = 122;
   doc.setTextColor(15, 23, 42);
@@ -585,6 +607,7 @@ export function exportPremiumBriefPdf(
 ) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
+  const reportDate = resolveReportDate(authorityConfig, now);
   const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
   const baseScenario = scenarioRows[0].result;
   const priorities = [authorityConfig.strategicPriority1, authorityConfig.strategicPriority2, authorityConfig.strategicPriority3]
@@ -599,7 +622,7 @@ export function exportPremiumBriefPdf(
   doc.text('MTFS Premium Brief', PAGE_MARGIN, 62);
   doc.setFontSize(10.5);
   doc.setFont('helvetica', 'normal');
-  doc.text(`${authorityConfig.authorityName} · ${authorityConfig.reportingPeriod} · ${now.toLocaleDateString('en-GB')}`, PAGE_MARGIN, 84);
+  doc.text(`${authorityConfig.authorityName} · ${authorityConfig.reportingPeriod} · ${reportDate.toLocaleDateString('en-GB')}`, PAGE_MARGIN, 84);
   doc.text('Enhanced briefing pack for leadership, cabinet and committee review', PAGE_MARGIN, 100);
   doc.setTextColor(15, 23, 42);
 
@@ -798,6 +821,7 @@ export function exportPremiumBriefPdf(
     head: [['Data Definition', 'Current Value']],
     body: [
       ['Model version', MODEL_VERSION],
+      ['Report date', reportDate.toLocaleDateString('en-GB')],
       ['Generated', now.toLocaleString('en-GB')],
       ['Savings proposals', `${savingsProposals.length}`],
       ['Named reserves', `${baseline.namedReserves.length}`],

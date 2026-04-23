@@ -180,6 +180,19 @@ function recompute(
   return runCalculations(assumptions, baseline, savingsProposals);
 }
 
+function resolveUniqueScenarioName(name: string, scenarios: Scenario[]): string {
+  const baseName = name.trim() || 'Scenario';
+  const existing = new Set(scenarios.map((s) => s.name.trim().toLowerCase()));
+  if (!existing.has(baseName.toLowerCase())) return baseName;
+  let suffix = 2;
+  let candidate = `${baseName} (${suffix})`;
+  while (existing.has(candidate.toLowerCase())) {
+    suffix += 1;
+    candidate = `${baseName} (${suffix})`;
+  }
+  return candidate;
+}
+
 function buildAuditEntry(result: MTFSResult, description: string): AuditTrailEntry {
   return {
     id: `audit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -315,7 +328,18 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateBaselineField: (key, value, description) =>
     set((s) => {
-      const baseline = { ...s.baseline, [key]: value };
+      const baseline = {
+        ...s.baseline,
+        [key]: value,
+        ...(key === 'reservesMinimumThreshold'
+          ? {
+            reservesAdequacyMethodology: {
+              ...s.baseline.reservesAdequacyMethodology,
+              fixedMinimum: value,
+            },
+          }
+          : {}),
+      };
       const desc = description ?? `Baseline field updated: ${String(key)}`;
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)] };
@@ -323,7 +347,18 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   importBaselinePartial: (partial, description = 'Baseline imported') =>
     set((s) => {
-      const baseline = { ...s.baseline, ...partial };
+      const baseline = {
+        ...s.baseline,
+        ...partial,
+        ...(typeof partial.reservesMinimumThreshold === 'number'
+          ? {
+            reservesAdequacyMethodology: {
+              ...s.baseline.reservesAdequacyMethodology,
+              fixedMinimum: partial.reservesMinimumThreshold,
+            },
+          }
+          : {}),
+      };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, description)] };
     }),
@@ -389,7 +424,13 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateReservesAdequacyMethodology: (updates) =>
     set((s) => {
-      const baseline = { ...s.baseline, reservesAdequacyMethodology: { ...s.baseline.reservesAdequacyMethodology, ...updates } };
+      const baseline = {
+        ...s.baseline,
+        reservesAdequacyMethodology: { ...s.baseline.reservesAdequacyMethodology, ...updates },
+        ...(typeof updates.fixedMinimum === 'number'
+          ? { reservesMinimumThreshold: updates.fixedMinimum }
+          : {}),
+      };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Reserves adequacy methodology updated')] };
     }),
@@ -698,9 +739,10 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     const s = get();
     const id = `scenario-${Date.now()}`;
     const colorIndex = s.scenarios.length % SCENARIO_COLORS.length;
+    const resolvedName = resolveUniqueScenarioName(name, s.scenarios);
     const scenario: Scenario = {
       id,
-      name,
+      name: resolvedName,
       description,
       type,
       assumptions: { ...s.assumptions },

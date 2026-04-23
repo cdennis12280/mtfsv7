@@ -11,7 +11,7 @@ import type { SavingsProposal, SavingsCategory, RagStatus } from '../../types/fi
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
-  return `£${abs >= 1000 ? `${(abs / 1000).toFixed(1)}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 const CATEGORY_META: Record<SavingsCategory, { label: string; color: string }> = {
@@ -776,7 +776,7 @@ export function SavingsProgramme() {
             Add individual proposals to build your savings programme
           </p>
           <p className="text-[10px] text-[#4a6080]">
-            The model currently uses the policy lever target from the sidebar (£{(assumptions.policy.annualSavingsTarget / 1000).toFixed(1)}m/yr)
+            The model currently uses the policy lever target from the sidebar (£{(assumptions.policy.annualSavingsTarget / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m/yr)
           </p>
         </div>
       ) : (
