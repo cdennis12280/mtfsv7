@@ -119,8 +119,9 @@ export function KPIBar() {
     : (audienceMode === 'members' ? 'No Y1 shortfall' : 'No Y1 gap (balanced/surplus)');
 
   return (
-    <div className="flex border-b border-[rgba(99,179,237,0.07)] bg-[#0a1120]">
-      <KPI
+    <div id="kpi-rail" className="relative border-b border-[rgba(99,179,237,0.07)] bg-[#0a1120]">
+      <div className="flex">
+        <KPI
         icon={<AlertTriangle size={14} />}
         label={audienceMode === 'members' ? '5-Year Funding Shortfall' : '5-Year MTFS Gap'}
         value={totalGap <= 0 ? 'Balanced' : fmt(totalGap)}
@@ -128,8 +129,8 @@ export function KPIBar() {
         status={gapStatus}
         pulse={structuralDeficitFlag}
         tooltip="Total cumulative budget shortfall over 5 years after planned mitigations."
-      />
-      <KPI
+        />
+        <KPI
         icon={<PiggyBank size={14} />}
         label={audienceMode === 'members' ? 'Safety Buffer' : 'Reserves Status'}
         value={yearReservesExhausted ? yearReservesExhausted : `${reservesToNetBudget.toFixed(1)}%`}
@@ -137,32 +138,35 @@ export function KPIBar() {
         status={reservesStatus}
         pulse={!!yearReservesExhausted}
         tooltip="Shows whether closing reserves remain at prudent levels through the planning period."
-      />
-      <KPI
+        />
+        <KPI
         icon={<TrendingDown size={14} />}
         label={audienceMode === 'members' ? 'Annual Action Needed' : 'Required Savings'}
         value={fmt(requiredSavingsToBalance)}
         sub={audienceMode === 'members' ? 'Average each year to break even' : 'Annual average to balance'}
         status={savingsAsBudgetPct > 8 ? 'warning' : 'neutral'}
         tooltip="Average recurring savings required each year to maintain a balanced medium-term position."
-      />
-      <KPI
+        />
+        <KPI
         icon={<Percent size={14} />}
         label={audienceMode === 'members' ? 'Council Tax Context' : 'CT Equivalent'}
         value={`${councilTaxEquivalent.toFixed(1)}%`}
         sub={ctSub}
         status={ctStatus}
         tooltip="Illustrative council tax percentage equivalent of the Year 1 shortfall."
-      />
-      <KPI
+        />
+        <KPI
         icon={<BarChart3 size={14} />}
         label={audienceMode === 'members' ? 'Scale of Savings' : 'Savings Burden'}
         value={`${savingsAsBudgetPct.toFixed(1)}%`}
         sub="of 5yr expenditure"
         status={savingsAsBudgetPct > 8 ? 'warning' : 'good'}
         tooltip="Delivered savings as a share of total five-year expenditure."
-      />
-      <RiskGauge score={overallRiskScore} />
+        />
+        <div>
+          <RiskGauge score={overallRiskScore} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   ChevronDown, ChevronRight, RotateCcw, Zap, TrendingUp, TrendingDown,
-  Sliders, DollarSign, Settings2, Lock, Building2
+  Sliders, DollarSign, Settings2, Lock, Building2, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { useMTFSStore } from '../store/mtfsStore';
 import { SliderControl, NumberInput, Toggle } from './ui/SliderControl';
@@ -108,6 +108,7 @@ function Section({ title, icon, defaultOpen = true, children, accent = '#3b82f6'
 }
 
 export function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
   const {
     assumptions,
     baseline,
@@ -172,20 +173,43 @@ export function Sidebar() {
   }, [assumptions, baseline, savingsProposals, result.totalGap, result.years]);
 
   return (
-    <aside className="w-72 shrink-0 h-screen overflow-y-auto bg-[#0a1120] border-r border-[rgba(99,179,237,0.08)] flex flex-col">
+    <aside id="assumption-engine-sidebar" className={`shrink-0 h-screen overflow-y-auto bg-[#0a1120] border-r border-[rgba(99,179,237,0.08)] flex flex-col transition-all duration-200 ${collapsed ? 'w-16' : 'w-72'}`}>
       {/* Header */}
-      <div className="px-4 py-4 border-b border-[rgba(99,179,237,0.08)]">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="w-6 h-6 rounded-md bg-[#3b82f6] flex items-center justify-center">
-            <Sliders size={12} className="text-white" />
+      <div className="px-3 py-3 border-b border-[rgba(99,179,237,0.08)]">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-[#3b82f6] flex items-center justify-center">
+              <Sliders size={12} className="text-white" />
+            </div>
+            {!collapsed && <span className="text-[13px] font-bold text-[#f0f4ff] tracking-tight">Assumption Engine</span>}
           </div>
-          <span className="text-[13px] font-bold text-[#f0f4ff] tracking-tight">Assumption Engine</span>
+          <button
+            onClick={() => setCollapsed((v) => !v)}
+            title={collapsed ? 'Expand Assumption Engine panel' : 'Collapse Assumption Engine panel'}
+            className="p-1.5 rounded-md bg-[rgba(99,179,237,0.08)] border border-[rgba(99,179,237,0.16)] text-[#8ca0c0] hover:text-[#f0f4ff] hover:border-[rgba(99,179,237,0.3)] transition-colors"
+          >
+            {collapsed ? <PanelLeftOpen size={12} /> : <PanelLeftClose size={12} />}
+          </button>
         </div>
-        <p className="text-[10px] text-[#4a6080] leading-relaxed">
-          Adjust assumptions to model MTFS scenarios in real time
-        </p>
+        {!collapsed && (
+          <p className="text-[10px] text-[#4a6080] leading-relaxed">
+            Adjust assumptions to model MTFS scenarios in real time
+          </p>
+        )}
+        {collapsed && (
+          <div className="flex flex-col items-center gap-3 mt-3">
+            <Sliders size={12} className="text-white" />
+            <div className="w-5 h-px bg-[rgba(99,179,237,0.2)]" />
+            <DollarSign size={12} className="text-[#4a6080]" />
+            <TrendingDown size={12} className="text-[#4a6080]" />
+            <Zap size={12} className="text-[#4a6080]" />
+            <Settings2 size={12} className="text-[#4a6080]" />
+          </div>
+        )}
       </div>
 
+      {!collapsed && (
+        <>
       {/* Quick Presets */}
       <div className="px-3 py-3 border-b border-[rgba(99,179,237,0.06)]">
         <div className="flex items-center gap-1 mb-2">
@@ -419,6 +443,20 @@ export function Sidebar() {
           <span className="text-[9px] text-[#4a6080]">CIPFA-aligned · Deterministic model</span>
         </div>
       </div>
+        </>
+      )}
+
+      {collapsed && (
+        <div className="mt-auto px-2 py-3 border-t border-[rgba(99,179,237,0.08)]">
+          <button
+            onClick={resetToDefaults}
+            title="Reset to defaults"
+            className="w-full flex items-center justify-center p-2 rounded-md bg-[rgba(99,179,237,0.05)] border border-[rgba(99,179,237,0.12)] text-[#8ca0c0] hover:text-[#f0f4ff]"
+          >
+            <RotateCcw size={11} />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

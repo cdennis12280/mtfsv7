@@ -69,6 +69,8 @@ export function ScenarioPlanning() {
     risk: 35,
     reserves: 20,
   });
+  const [diffModeEnabled, setDiffModeEnabled] = useState(false);
+  const [diffTarget, setDiffTarget] = useState<string>('scenario:');
   const resolvedScenarios = scenarios.map((s) => ({
     ...s,
     result: runCalculations(s.assumptions, baseline, savingsProposals),
@@ -305,6 +307,42 @@ export function ScenarioPlanning() {
     }));
     exportDecisionPackPdf({ authorityConfig, options: selected });
   };
+
+  const getFlattenedAssumptions = (input: typeof assumptions) => ([
+    ['Council Tax Increase', input.funding.councilTaxIncrease],
+    ['Business Rates Growth', input.funding.businessRatesGrowth],
+    ['Grant Variation', input.funding.grantVariation],
+    ['Fees & Charges Elasticity', input.funding.feesChargesElasticity],
+    ['Pay Award', input.expenditure.payAward],
+    ['Non-Pay Inflation', input.expenditure.nonPayInflation],
+    ['ASC Demand Growth', input.expenditure.ascDemandGrowth],
+    ['CSC Demand Growth', input.expenditure.cscDemandGrowth],
+    ['Savings Delivery Risk', input.expenditure.savingsDeliveryRisk],
+    ['Annual Savings Target', input.policy.annualSavingsTarget],
+    ['Planned Reserves Use', input.policy.reservesUsage],
+    ['Protect Social Care', input.policy.socialCareProtection ? 1 : 0],
+    ['Real Terms Mode', input.advanced.realTermsToggle ? 1 : 0],
+    ['Deflator Rate', input.advanced.inflationRate],
+  ]);
+
+  const diffTargetOptions = [
+    ...resolvedScenarios.map((s) => ({ key: `scenario:${s.id}`, label: `Scenario: ${s.name}`, assumptions: s.assumptions, result: s.result })),
+    ...snapshots.map((s) => ({
+      key: `snapshot:${s.id}`,
+      label: `Snapshot: ${s.name}`,
+      assumptions: s.assumptions,
+      result: runCalculations(s.assumptions, s.baseline, s.savingsProposals),
+    })),
+  ];
+
+  const selectedDiffTarget = diffTargetOptions.find((x) => x.key === diffTarget) ?? diffTargetOptions[0];
+  const diffRows = selectedDiffTarget
+    ? getFlattenedAssumptions(assumptions).map(([label, currentValue]) => {
+      const targetVal = getFlattenedAssumptions(selectedDiffTarget.assumptions).find(([l]) => l === label)?.[1] ?? currentValue;
+      const delta = Number(targetVal) - Number(currentValue);
+      return { label, currentValue, targetVal, delta, changed: Math.abs(delta) > 0.0001 };
+    }).filter((r) => r.changed)
+    : [];
 
   return (
     <div className="space-y-4">
@@ -571,6 +609,87 @@ export function ScenarioPlanning() {
             Recommended option with current weighting: <span className="text-[#f0f4ff] font-semibold">{matrixRows[0]?.key}: {matrixRows[0]?.name}</span>
           </p>
         </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>What Changed Diff Mode</CardTitle>
+            <RichTooltip content="Visual diff of current assumptions versus a selected scenario or snapshot, including outcome deltas." />
+          </div>
+          <label className="flex items-center gap-2 text-[10px] text-[#8ca0c0]">
+            <input type="checkbox" checked={diffModeEnabled} onChange={(e) => setDiffModeEnabled(e.target.checked)} />
+            Enable diff mode
+          </label>
+        </CardHeader>
+        {diffModeEnabled ? (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] text-[#4a6080]">Compare current to</span>
+              <select
+                value={selectedDiffTarget?.key ?? ''}
+                onChange={(e) => setDiffTarget(e.target.value)}
+                className="bg-[#080c14] border border-[rgba(99,179,237,0.2)] rounded-md px-2 py-1.5 text-[10px] text-[#f0f4ff]"
+              >
+                {diffTargetOptions.map((option) => (
+                  <option key={option.key} value={option.key}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            {selectedDiffTarget ? (
+              <>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.12)] p-2">
+                    <p className="text-[9px] text-[#4a6080] uppercase tracking-widest">Δ 5yr Gap</p>
+                    <p className="mono text-[12px] font-bold text-[#f0f4ff]">
+                      {fmtK(selectedDiffTarget.result.totalGap - result.totalGap)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.12)] p-2">
+                    <p className="text-[9px] text-[#4a6080] uppercase tracking-widest">Δ Risk</p>
+                    <p className="mono text-[12px] font-bold text-[#f0f4ff]">
+                      {(selectedDiffTarget.result.overallRiskScore - result.overallRiskScore).toFixed(1)}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.12)] p-2">
+                    <p className="text-[9px] text-[#4a6080] uppercase tracking-widest">Δ Y5 Reserves</p>
+                    <p className="mono text-[12px] font-bold text-[#f0f4ff]">
+                      {fmtK((selectedDiffTarget.result.years[4]?.totalClosingReserves ?? 0) - (result.years[4]?.totalClosingReserves ?? 0))}
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full premium-table sticky-first resizable text-[10px]">
+                    <thead>
+                      <tr className="border-b border-[rgba(99,179,237,0.08)]">
+                        <th className="text-left py-2 text-[#4a6080]">Assumption</th>
+                        <th className="text-right py-2 text-[#4a6080]">Current</th>
+                        <th className="text-right py-2 text-[#4a6080]">Selected</th>
+                        <th className="text-right py-2 text-[#4a6080]">Delta</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {diffRows.map((row) => (
+                        <tr key={row.label} className="border-b border-[rgba(99,179,237,0.04)]">
+                          <td className="py-2 text-[#8ca0c0]">{row.label}</td>
+                          <td className="py-2 text-right mono text-[#8ca0c0]">{Number(row.currentValue).toLocaleString('en-GB', { maximumFractionDigits: 2 })}</td>
+                          <td className="py-2 text-right mono text-[#8ca0c0]">{Number(row.targetVal).toLocaleString('en-GB', { maximumFractionDigits: 2 })}</td>
+                          <td className={`py-2 text-right mono font-semibold ${row.delta >= 0 ? 'text-[#ef4444]' : 'text-[#10b981]'}`}>
+                            {row.delta >= 0 ? '+' : ''}{row.delta.toLocaleString('en-GB', { maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="text-[10px] text-[#4a6080]">No scenario/snapshot available for comparison.</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-[10px] text-[#4a6080]">Enable diff mode to highlight assumption and outcome differences visually.</p>
+        )}
       </Card>
 
       {resolvedScenarios.length === 0 && (

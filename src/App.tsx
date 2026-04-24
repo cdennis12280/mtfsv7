@@ -2,6 +2,7 @@ import React from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { KPIBar } from './components/KPIBar';
+import { OnboardingCoach } from './components/OnboardingCoach';
 import { OverviewPanel } from './components/panels/OverviewPanel';
 import { BaselineEditor } from './components/panels/BaselineEditor';
 import { GapAnalysis } from './components/panels/GapAnalysis';
@@ -155,12 +156,15 @@ export default function App() {
     <div className={`app-shell preset-${accessibilityPreset} density-${densityMode} flex h-screen overflow-hidden`} style={{ background: '#080c14' }}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header />
-        <KPIBar />
-        <main className="flex-1 overflow-y-auto p-5 fade-in" key={activeTab}>
+        <div className="sticky top-0 z-20 bg-[#080c14]">
+          <Header />
+          <KPIBar />
+        </div>
+        <main id="main-workspace" className="flex-1 overflow-y-auto p-5 fade-in" key={activeTab}>
           {PANELS[activeTab] ?? <OverviewPanel />}
         </main>
       </div>
+      <OnboardingCoach />
     </div>
   );
 }

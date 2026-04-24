@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine, Cell, Legend
+  Tooltip, ResponsiveContainer, ReferenceLine, Cell, Legend, LabelList, ReferenceArea
 } from 'recharts';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
@@ -131,15 +131,22 @@ export function GapAnalysis() {
               <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
                 tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
               <Tooltip content={<CustomTooltip />} />
+              <ReferenceArea
+                y1={Math.min(...areaData.map((d) => d.Funding))}
+                y2={Math.max(...areaData.map((d) => d.Funding))}
+                fill="rgba(59,130,246,0.02)"
+              />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
               <Area
                 type="monotone" dataKey="Funding" stroke="#3b82f6" strokeWidth={2}
-                fill="url(#gradFunding)" dot={false} activeDot={{ r: 4, fill: '#3b82f6' }}
-              />
+                fill="url(#gradFunding)" dot={false} activeDot={{ r: 4, fill: '#3b82f6' }}>
+                <LabelList dataKey="Funding" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#4a6080" fontSize={9} />
+              </Area>
               <Area
                 type="monotone" dataKey="Expenditure" stroke="#ef4444" strokeWidth={2}
-                fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: '#ef4444' }}
-              />
+                fill="url(#gradExp)" dot={false} activeDot={{ r: 4, fill: '#ef4444' }}>
+                <LabelList dataKey="Expenditure" position="bottom" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#4a6080" fontSize={9} />
+              </Area>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -160,6 +167,16 @@ export function GapAnalysis() {
                 <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
                   tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
                 <Tooltip content={<CustomTooltip />} />
+                <ReferenceArea
+                  y1={Math.min(...gapBarData.map((d) => d.gap), 0)}
+                  y2={0}
+                  fill="rgba(16,185,129,0.05)"
+                />
+                <ReferenceArea
+                  y1={0}
+                  y2={Math.max(...gapBarData.map((d) => d.gap), 0)}
+                  fill="rgba(239,68,68,0.05)"
+                />
                 <ReferenceLine y={0} stroke="rgba(99,179,237,0.3)" strokeDasharray="4 4" />
                 <Bar dataKey="gap" name="Gross Gap" radius={[3, 3, 0, 0]}>
                   {gapBarData.map((entry, index) => (
@@ -169,8 +186,11 @@ export function GapAnalysis() {
                       fillOpacity={0.85}
                     />
                   ))}
+                  <LabelList dataKey="gap" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
                 </Bar>
-                <Bar dataKey="reserves" name="Reserves Used" fill="#f59e0b" fillOpacity={0.7} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="reserves" name="Reserves Used" fill="#f59e0b" fillOpacity={0.7} radius={[3, 3, 0, 0]}>
+                  <LabelList dataKey="reserves" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+                </Bar>
                 {peerBenchmark.enabled && (
                   <Bar dataKey="peerGap" name="Peer Median Gap" fill="#06b6d4" fillOpacity={0.45} radius={[3, 3, 0, 0]} />
                 )}

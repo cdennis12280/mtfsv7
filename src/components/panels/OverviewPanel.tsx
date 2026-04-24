@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, ReferenceLine
+  Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, LabelList
 } from 'recharts';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
@@ -124,6 +124,22 @@ export function OverviewPanel() {
     };
   });
 
+  const executiveNarrative = useMemo(() => {
+    const bullets: string[] = [];
+    const gapText = result.totalGap <= 0 ? 'balanced/surplus' : `shortfall of ${fmtK(result.totalGap)}`;
+    bullets.push(`5-year position: ${gapText}.`);
+    bullets.push(`Mitigations vs do-nothing: ${fmtK(doNothingDelta)} improvement.`);
+    bullets.push(`Reserves outlook: ${fmtK(year5Reserves)} closing balance (Year 5).`);
+    if (result.overallRiskScore >= 60) {
+      bullets.push(`Risk is elevated (${riskLabel}, ${result.overallRiskScore.toFixed(0)}/100); additional mitigation assurance is recommended.`);
+    } else if (result.totalGap > 0) {
+      bullets.push(`Residual affordability pressure remains; recurring savings of ${fmtK(result.requiredSavingsToBalance)} should be prioritised.`);
+    } else {
+      bullets.push(`Current plan is broadly on track; focus should shift to delivery control and resilience monitoring.`);
+    }
+    return bullets;
+  }, [result.totalGap, doNothingDelta, year5Reserves, result.overallRiskScore, riskLabel, result.requiredSavingsToBalance]);
+
   const glossary = [
     {
       term: 'Structural deficit',
@@ -143,6 +159,11 @@ export function OverviewPanel() {
     },
   ];
 
+  const topRisks = useMemo(
+    () => [...result.riskFactors].sort((a, b) => b.score - a.score).slice(0, 3),
+    [result.riskFactors]
+  );
+
   return (
     <div className="grid grid-cols-3 gap-4">
       {/* Left: Charts */}
@@ -152,11 +173,11 @@ export function OverviewPanel() {
             <p className="text-[10px] uppercase tracking-widest text-[#10b981] font-semibold">
               {audienceMode === 'members' ? 'Elected Member Summary' : 'Finance Summary'}
             </p>
-            <p className="text-[12px] text-[#f0f4ff] mt-1">
-              {audienceMode === 'members'
-                ? `Current 5-year position: ${fmtK(result.totalGap)} (structural: ${fmtK(result.totalStructuralGap)}). Compared with do-nothing, mitigations improve the outlook by ${fmtK(doNothingDelta)}; Year 5 reserves are ${fmtK(year5Reserves)} and risk is ${riskLabel} (${result.overallRiskScore.toFixed(0)}/100).`
-                : `5-year affordability: ${fmtK(result.totalGap)} (structural ${fmtK(result.totalStructuralGap)}), requiring ${fmtK(result.requiredSavingsToBalance)} recurring annual action. Mitigation effect vs do-nothing: ${fmtK(doNothingDelta)}; Year 5 reserves ${fmtK(year5Reserves)}; risk ${riskLabel} (${result.overallRiskScore.toFixed(0)}/100).`}
-            </p>
+            <ul className="mt-2 space-y-1">
+              {executiveNarrative.map((line) => (
+                <li key={line} className="text-[12px] text-[#f0f4ff] leading-relaxed">• {line}</li>
+              ))}
+            </ul>
           </div>
         </Card>
 
@@ -164,13 +185,13 @@ export function OverviewPanel() {
           <Card className="bg-[rgba(59,130,246,0.08)]">
             <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">What Changed</p>
             <p className="text-[11px] text-[#8ca0c0] mt-1">
-              Gap delta vs do-nothing: <span className="mono text-[#3b82f6] font-semibold">{fmtK(doNothingResult.totalGap - result.totalGap)}</span>
+              Gap delta vs do-nothing: <span className="mono text-[#3b82f6] font-semibold">{fmtK(doNothingDelta)}</span>
             </p>
           </Card>
           <Card className="bg-[rgba(245,158,11,0.08)]">
             <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Decision Needed</p>
             <p className="text-[11px] text-[#8ca0c0] mt-1">
-              Annual action requirement: <span className="mono text-[#f59e0b] font-semibold">{fmtK(result.requiredSavingsToBalance)}</span>
+              Action requirement: <span className="mono text-[#f59e0b] font-semibold">{fmtK(result.requiredSavingsToBalance)}</span>
             </p>
           </Card>
           <Card className="bg-[rgba(239,68,68,0.08)]">
@@ -180,6 +201,26 @@ export function OverviewPanel() {
             </p>
           </Card>
         </div>
+
+        <Card className="bg-[rgba(59,130,246,0.04)] border-[rgba(59,130,246,0.18)]">
+          <CardHeader>
+            <div className="flex items-center gap-1.5">
+              <CardTitle>Top Risks</CardTitle>
+              <RichTooltip content="Highest current risk drivers based on the live risk engine." />
+            </div>
+          </CardHeader>
+          <div className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.12)] p-3">
+            <p className="text-[9px] uppercase tracking-widest text-[#4a6080] mb-2">Top 3 Risks</p>
+            <ul className="space-y-2">
+              {topRisks.map((risk) => (
+                <li key={risk.name} className="text-[11px] text-[#8ca0c0]">
+                  <span className="text-[#f0f4ff] font-semibold">{risk.name}</span> ({risk.score.toFixed(0)})
+                  <span className="block text-[10px] text-[#4a6080] mt-0.5">{risk.description}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Card>
 
         {/* Status strip */}
         <div className="grid grid-cols-5 gap-2">
@@ -326,17 +367,28 @@ export function OverviewPanel() {
                   <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
                     tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
-                  <Tooltip
+                <Tooltip
                     contentStyle={{ background: '#1a2540', border: '1px solid rgba(99,179,237,0.2)', borderRadius: 8, fontSize: 11 }}
                     labelStyle={{ color: '#8ca0c0' }}
                     formatter={(v: unknown) => [fmtK(v as number), 'Gap']}
-                  />
-                  <ReferenceLine y={0} stroke="rgba(99,179,237,0.3)" strokeDasharray="4 4" />
-                  <Bar dataKey="gap" name="Gap" fill="#ef4444" fillOpacity={0.8} radius={[3, 3, 0, 0]}>
-                    {gapData.map((entry, i) => (
-                      <rect key={i} fill={entry.gap > 0 ? '#ef4444' : '#10b981'} />
-                    ))}
-                  </Bar>
+                />
+                <ReferenceArea
+                  y1={Math.min(...gapData.map((d) => d.gap), 0)}
+                  y2={0}
+                  fill="rgba(16,185,129,0.05)"
+                />
+                <ReferenceArea
+                  y1={0}
+                  y2={Math.max(...gapData.map((d) => d.gap), 0)}
+                  fill="rgba(239,68,68,0.05)"
+                />
+                <ReferenceLine y={0} stroke="rgba(99,179,237,0.3)" strokeDasharray="4 4" />
+                <Bar dataKey="gap" name="Gap" fill="#ef4444" fillOpacity={0.8} radius={[3, 3, 0, 0]}>
+                  {gapData.map((entry, i) => (
+                    <rect key={i} fill={entry.gap > 0 ? '#ef4444' : '#10b981'} />
+                  ))}
+                  <LabelList dataKey="gap" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+                </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -377,7 +429,9 @@ export function OverviewPanel() {
                     />
                   )}
                   <Area type="monotone" dataKey="Reserves" stroke="#8b5cf6" strokeWidth={2}
-                    fill="url(#ovGradR)" dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} />
+                    fill="url(#ovGradR)" dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }}>
+                    <LabelList dataKey="Reserves" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+                  </Area>
                 </AreaChart>
               </ResponsiveContainer>
             </div>

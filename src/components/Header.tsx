@@ -44,7 +44,7 @@ export function Header() {
     : TABS;
 
   return (
-    <div className="border-b border-[rgba(99,179,237,0.08)] bg-[#0a1120]">
+    <div id="top-header" className="border-b border-[rgba(99,179,237,0.08)] bg-[#0a1120]">
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 py-3">
         <div className="flex items-center gap-3">
@@ -120,26 +120,32 @@ export function Header() {
       </div>
 
       {/* Tab navigation */}
-      <div className="flex items-center px-5 gap-0 overflow-x-auto">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            title={`Open ${tab.label} panel`}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium whitespace-nowrap border-b-2 transition-all shrink-0',
-              activeTab === tab.id
-                ? 'text-[#3b82f6] border-[#3b82f6]'
-                : 'text-[#4a6080] border-transparent hover:text-[#8ca0c0] hover:border-[rgba(99,179,237,0.2)]'
-            )}
-          >
-            <span className={activeTab === tab.id ? 'text-[#3b82f6]' : 'text-[#4a6080]'}>{tab.icon}</span>
-            {tab.label}
-            {tab.id === 'insights' && (criticalCount > 0 || warningCount > 0) && (
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] pulse-dot ml-0.5" />
-            )}
-          </button>
-        ))}
+      <div id="header-tabs" className="flex items-center px-5 gap-1 overflow-x-auto">
+        {visibleTabs.map((tab, i) => {
+            return (
+              <React.Fragment key={tab.id}>
+                <button
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                  }}
+                  title={`Open ${tab.label} panel`}
+                  className={clsx(
+                    'group flex items-center gap-1.5 px-3 py-2 text-[11px] font-medium whitespace-nowrap border rounded-lg transition-all shrink-0',
+                    activeTab === tab.id
+                      ? 'text-[#dbeafe] border-[#3b82f6] bg-[rgba(59,130,246,0.2)] shadow-[0_0_0_1px_rgba(59,130,246,0.25)]'
+                      : 'text-[#4a6080] border-transparent hover:text-[#8ca0c0] hover:border-[rgba(99,179,237,0.2)] hover:bg-[rgba(99,179,237,0.05)]'
+                  )}
+                >
+                  <span className={activeTab === tab.id ? 'text-[#60a5fa]' : 'text-[#4a6080] group-hover:text-[#8ca0c0]'}>{tab.icon}</span>
+                  {tab.label}
+                  {activeTab === tab.id && <span className="w-1 h-1 rounded-full bg-[#3b82f6]" />}
+                  {tab.id === 'insights' && (criticalCount > 0 || warningCount > 0) && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] pulse-dot ml-0.5" />
+                  )}
+                </button>
+              </React.Fragment>
+            );
+          })}
       </div>
     </div>
   );

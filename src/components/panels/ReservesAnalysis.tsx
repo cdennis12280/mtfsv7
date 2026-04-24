@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine, BarChart, Bar, Legend
+  ResponsiveContainer, ReferenceLine, BarChart, Bar, Legend, LabelList, ReferenceArea
 } from 'recharts';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
@@ -87,6 +87,19 @@ export function ReservesAnalysis() {
   const totalCloseReserves = lastYear?.totalClosingReserves ?? 0;
   const isBelow = totalCloseReserves < minThreshold;
   const depletionPct = openingTotal > 0 ? ((openingTotal - totalCloseReserves) / openingTotal) * 100 : 0;
+  const [statusFilter, setStatusFilter] = useState<'all' | 'adequate' | 'below' | 'exhausted'>('all');
+  const [yearFilter, setYearFilter] = useState('');
+
+  const filteredYears = useMemo(() => {
+    return years.filter((y) => {
+      const statusOk = statusFilter === 'all'
+        || (statusFilter === 'adequate' && !y.reservesExhausted && !y.reservesBelowThreshold)
+        || (statusFilter === 'below' && y.reservesBelowThreshold && !y.reservesExhausted)
+        || (statusFilter === 'exhausted' && y.reservesExhausted);
+      const yearOk = !yearFilter.trim() || y.label.toLowerCase().includes(yearFilter.toLowerCase());
+      return statusOk && yearOk;
+    });
+  }, [years, statusFilter, yearFilter]);
 
   return (
     <div className="space-y-4">
@@ -155,6 +168,7 @@ export function ReservesAnalysis() {
               <YAxis tick={{ fill: '#4a6080', fontSize: 10 }} axisLine={false} tickLine={false}
                 tickFormatter={(v) => `£${(v / 1000).toLocaleString('en-GB', { maximumFractionDigits: 0 })}m`} />
               <Tooltip content={<CustomTooltip />} />
+              <ReferenceArea y1={0} y2={minThreshold} fill="rgba(239,68,68,0.06)" />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
               <ReferenceLine
                 y={minThreshold}
@@ -165,12 +179,14 @@ export function ReservesAnalysis() {
               />
               <Area
                 type="monotone" dataKey="General Fund" stroke="#3b82f6" strokeWidth={2}
-                fill="url(#gradGF)" dot={{ r: 3, fill: '#3b82f6' }} activeDot={{ r: 5 }}
-              />
+                fill="url(#gradGF)" dot={{ r: 3, fill: '#3b82f6' }} activeDot={{ r: 5 }}>
+                <LabelList dataKey="General Fund" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+              </Area>
               <Area
                 type="monotone" dataKey="Earmarked" stroke="#8b5cf6" strokeWidth={2}
-                fill="url(#gradEM)" dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }}
-              />
+                fill="url(#gradEM)" dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }}>
+                <LabelList dataKey="Earmarked" position="bottom" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+              </Area>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -191,8 +207,12 @@ export function ReservesAnalysis() {
                 tickFormatter={(v) => `${(v / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#8ca0c0', paddingTop: 8 }} />
-              <Bar dataKey="drawdown" name="Drawdown" fill="#f59e0b" fillOpacity={0.8} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="closing" name="Closing Balance" fill="#3b82f6" fillOpacity={0.7} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="drawdown" name="Drawdown" fill="#f59e0b" fillOpacity={0.8} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="drawdown" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+              </Bar>
+              <Bar dataKey="closing" name="Closing Balance" fill="#3b82f6" fillOpacity={0.7} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="closing" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -203,8 +223,26 @@ export function ReservesAnalysis() {
         <CardHeader>
           <CardTitle>Reserves Movement Schedule</CardTitle>
         </CardHeader>
+        <div className="flex items-center gap-2 mb-3">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            className="bg-[#080c14] border border-[rgba(99,179,237,0.2)] rounded-md px-2 py-1.5 text-[10px] text-[#f0f4ff]"
+          >
+            <option value="all">All statuses</option>
+            <option value="adequate">Adequate</option>
+            <option value="below">Below threshold</option>
+            <option value="exhausted">Exhausted</option>
+          </select>
+          <input
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            placeholder="Quick filter year…"
+            className="bg-[#080c14] border border-[rgba(99,179,237,0.2)] rounded-md px-2 py-1.5 text-[10px] text-[#f0f4ff] w-40"
+          />
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full premium-table text-[11px]">
+          <table className="w-full premium-table sticky-first resizable text-[11px]">
             <thead>
               <tr className="border-b border-[rgba(99,179,237,0.08)]">
                 <th className="text-left py-2 text-[#4a6080] font-semibold pr-4">Year</th>
@@ -216,7 +254,7 @@ export function ReservesAnalysis() {
               </tr>
             </thead>
             <tbody>
-              {years.map((y) => {
+              {filteredYears.map((y) => {
                 const vsThreshold = y.totalClosingReserves - minThreshold;
                 const ok = vsThreshold >= 0;
                 const totalDrawdown = getYearTotalDrawdown(y);

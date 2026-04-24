@@ -172,6 +172,26 @@ textarea:focus-visible {
   padding-bottom: 0.55rem;
 }
 
+.premium-table.sticky-first th:first-child,
+.premium-table.sticky-first td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #0f1a2d;
+}
+
+.premium-table.sticky-first tbody td:first-child {
+  background: #0c1627;
+  z-index: 1;
+}
+
+.premium-table.resizable th {
+  resize: horizontal;
+  overflow: auto;
+  min-width: 90px;
+  max-width: 360px;
+}
+
 .app-shell.preset-large-text {
   font-size: 1.1rem;
 }
@@ -215,4 +235,126 @@ textarea:focus-visible {
 .app-shell.density-comfortable .card-density,
 .app-shell.density-presentation .card-density {
   padding: calc(1rem * var(--density-pad));
+}
+
+.coach-root {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.coach-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 8, 20, 0.56);
+}
+
+.coach-highlight {
+  position: absolute;
+  border-radius: 12px;
+  border: 2px solid rgba(147, 197, 253, 0.9);
+  box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.2), 0 0 26px rgba(59, 130, 246, 0.4);
+}
+
+.coach-card {
+  position: absolute;
+  width: min(400px, calc(100vw - 32px));
+  border-radius: 12px;
+  border: 1px solid rgba(99, 179, 237, 0.3);
+  background: #101b2e;
+  box-shadow: 0 16px 36px rgba(2, 8, 20, 0.6);
+  padding: 14px;
+  pointer-events: auto;
+}
+
+.coach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-step {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #4a6080;
+  font-weight: 700;
+}
+
+.coach-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(99, 179, 237, 0.22);
+  background: rgba(15, 23, 42, 0.6);
+  color: #8ca0c0;
+}
+
+.coach-close:hover {
+  color: #f0f4ff;
+}
+
+.coach-title {
+  margin: 10px 0 6px;
+  font-size: 15px;
+  color: #f0f4ff;
+}
+
+.coach-copy {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8ca0c0;
+}
+
+.coach-actions {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.coach-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.coach-btn {
+  border-radius: 8px;
+  border: 1px solid rgba(99, 179, 237, 0.26);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.coach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.coach-btn-secondary {
+  background: rgba(15, 23, 42, 0.6);
+  color: #8ca0c0;
+}
+
+.coach-btn-secondary:hover:not(:disabled) {
+  color: #f0f4ff;
+}
+
+.coach-btn-primary {
+  background: rgba(59, 130, 246, 0.28);
+  color: #dbeafe;
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.coach-btn-primary:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.4);
 }
