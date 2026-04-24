@@ -444,6 +444,34 @@ export function SavingsProgramme() {
     return proposals;
   };
 
+  const validateImportedProposals = (proposals: SavingsProposal[]) => {
+    const warnings: string[] = [];
+    const duplicateNameTracker = new Map<string, number>();
+    for (const proposal of proposals) {
+      const key = normalize(proposal.name);
+      if (key) duplicateNameTracker.set(key, (duplicateNameTracker.get(key) ?? 0) + 1);
+      if (proposal.grossValue <= 0) {
+        warnings.push(`"${proposal.name || 'Unnamed'}" has grossValue <= 0. Check values are in £000s.`);
+      }
+      if (proposal.grossValue > 250_000) {
+        warnings.push(`"${proposal.name || 'Unnamed'}" has unusually large grossValue (${proposal.grossValue.toLocaleString('en-GB')}k). Check units.`);
+      }
+      const yearlyTotal = proposal.yearlyDelivery.reduce((sum, v) => sum + v, 0);
+      if (yearlyTotal > 350) {
+        warnings.push(`"${proposal.name || 'Unnamed'}" yearly delivery totals ${yearlyTotal}%. Check phasing inputs.`);
+      }
+      if (proposal.deliveryYear > 1 && proposal.yearlyDelivery[0] > 0) {
+        warnings.push(`"${proposal.name || 'Unnamed'}" has Year 1 delivery despite deliveryYear=${proposal.deliveryYear}.`);
+      }
+    }
+
+    const repeatedNames = Array.from(duplicateNameTracker.entries()).filter(([, count]) => count > 1).map(([name]) => name);
+    if (repeatedNames.length > 0) {
+      warnings.push(`Duplicate proposal names detected in file (${repeatedNames.slice(0, 3).join(', ')}). Consider unique names for audit tracking.`);
+    }
+    return warnings;
+  };
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -469,10 +497,24 @@ export function SavingsProgramme() {
       if (proposals.length === 0) {
         throw new Error('No valid proposal rows found. Check headers and data values.');
       }
-      proposals.forEach((proposal) => addSavingsProposal(proposal));
+
+      const existingFingerprint = new Set(
+        savingsProposals.map((p) => `${normalize(p.name)}|${p.grossValue}|${p.deliveryYear}|${p.isRecurring ? '1' : '0'}`)
+      );
+      const deduped = proposals.filter((p) => {
+        const fingerprint = `${normalize(p.name)}|${p.grossValue}|${p.deliveryYear}|${p.isRecurring ? '1' : '0'}`;
+        if (existingFingerprint.has(fingerprint)) return false;
+        existingFingerprint.add(fingerprint);
+        return true;
+      });
+      deduped.forEach((proposal) => addSavingsProposal(proposal));
+      const warnings = validateImportedProposals(deduped);
+      const skipped = proposals.length - deduped.length;
+      const warningText = warnings.length > 0 ? ` Warnings: ${warnings.slice(0, 3).join(' | ')}${warnings.length > 3 ? ` | +${warnings.length - 3} more` : ''}` : '';
+      const skippedText = skipped > 0 ? ` Skipped ${skipped} exact duplicate row${skipped === 1 ? '' : 's'}.` : '';
       setImportStatus({
         type: 'success',
-        message: `Imported ${proposals.length} savings proposal${proposals.length === 1 ? '' : 's'} from ${file.name}`,
+        message: `Imported ${deduped.length} savings proposal${deduped.length === 1 ? '' : 's'} from ${file.name}.${skippedText}${warningText}`,
       });
     } catch (error) {
       setImportStatus({

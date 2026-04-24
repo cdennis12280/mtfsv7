@@ -64,6 +64,11 @@ export function ScenarioPlanning() {
   const [decisionA, setDecisionA] = useState('current');
   const [decisionB, setDecisionB] = useState('');
   const [decisionC, setDecisionC] = useState('');
+  const [decisionWeights, setDecisionWeights] = useState({
+    affordability: 45,
+    risk: 35,
+    reserves: 20,
+  });
   const resolvedScenarios = scenarios.map((s) => ({
     ...s,
     result: runCalculations(s.assumptions, baseline, savingsProposals),
@@ -249,6 +254,45 @@ export function ScenarioPlanning() {
           ? 'Higher downside risk; likely needs stronger mitigations before adoption.'
           : 'Partially mitigated position; requires managed delivery and monitoring.',
   }));
+
+  const matrixRows = React.useMemo(() => {
+    const options = [optionA, optionB, optionC].map((o, i) => ({
+      key: `Option ${String.fromCharCode(65 + i)}`,
+      name: o.name,
+      totalGap: o.result.totalGap,
+      risk: o.result.overallRiskScore,
+      reservesY5: o.result.years[4]?.totalClosingReserves ?? 0,
+    }));
+    const minGap = Math.min(...options.map((o) => o.totalGap));
+    const maxGap = Math.max(...options.map((o) => o.totalGap));
+    const minRisk = Math.min(...options.map((o) => o.risk));
+    const maxRisk = Math.max(...options.map((o) => o.risk));
+    const minReserves = Math.min(...options.map((o) => o.reservesY5));
+    const maxReserves = Math.max(...options.map((o) => o.reservesY5));
+
+    const lowBetter = (value: number, min: number, max: number) => (max === min ? 50 : ((max - value) / (max - min)) * 100);
+    const highBetter = (value: number, min: number, max: number) => (max === min ? 50 : ((value - min) / (max - min)) * 100);
+
+    const weightSum = decisionWeights.affordability + decisionWeights.risk + decisionWeights.reserves;
+    const wa = weightSum > 0 ? decisionWeights.affordability / weightSum : 0;
+    const wr = weightSum > 0 ? decisionWeights.risk / weightSum : 0;
+    const wv = weightSum > 0 ? decisionWeights.reserves / weightSum : 0;
+
+    const scored = options.map((o) => {
+      const affordabilityScore = lowBetter(o.totalGap, minGap, maxGap);
+      const riskScore = lowBetter(o.risk, minRisk, maxRisk);
+      const reservesScore = highBetter(o.reservesY5, minReserves, maxReserves);
+      const weightedScore = (affordabilityScore * wa) + (riskScore * wr) + (reservesScore * wv);
+      return {
+        ...o,
+        affordabilityScore,
+        riskScore,
+        reservesScore,
+        weightedScore,
+      };
+    });
+    return scored.sort((a, b) => b.weightedScore - a.weightedScore);
+  }, [optionA, optionB, optionC, decisionWeights]);
 
   const exportDecisionPack = () => {
     const selected = [optionA, optionB, optionC].map((o, i) => ({
@@ -468,6 +512,64 @@ export function ScenarioPlanning() {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="mt-4 p-3 rounded-lg bg-[rgba(99,179,237,0.03)] border border-[rgba(99,179,237,0.12)]">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <p className="text-[11px] font-semibold text-[#f0f4ff]">Weighted Decision Matrix</p>
+            <p className="text-[9px] text-[#4a6080]">0–100 normalized score across options A/B/C</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {[
+              { key: 'affordability' as const, label: 'Affordability (Gap)' },
+              { key: 'risk' as const, label: 'Risk Profile' },
+              { key: 'reserves' as const, label: 'Year-5 Reserves' },
+            ].map((w) => (
+              <div key={w.key}>
+                <p className="text-[10px] text-[#4a6080] mb-1">{w.label} Weight</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={decisionWeights[w.key]}
+                    onChange={(e) => setDecisionWeights((prev) => ({ ...prev, [w.key]: Number(e.target.value) }))}
+                    className="w-full"
+                  />
+                  <span className="mono text-[10px] text-[#8ca0c0] w-8 text-right">{decisionWeights[w.key]}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full premium-table text-[10px]">
+              <thead>
+                <tr className="border-b border-[rgba(99,179,237,0.08)]">
+                  <th className="text-left py-2 text-[#4a6080]">Rank</th>
+                  <th className="text-left py-2 text-[#4a6080]">Option</th>
+                  <th className="text-right py-2 text-[#4a6080]">Affordability</th>
+                  <th className="text-right py-2 text-[#4a6080]">Risk</th>
+                  <th className="text-right py-2 text-[#4a6080]">Reserves</th>
+                  <th className="text-right py-2 text-[#4a6080]">Weighted Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrixRows.map((row, idx) => (
+                  <tr key={`${row.key}-${row.name}`} className="border-b border-[rgba(99,179,237,0.04)]">
+                    <td className="py-2 text-[#f0f4ff] font-semibold">{idx + 1}</td>
+                    <td className="py-2 text-[#8ca0c0]">{row.key}: {row.name}</td>
+                    <td className="py-2 text-right mono text-[#8ca0c0]">{row.affordabilityScore.toFixed(1)}</td>
+                    <td className="py-2 text-right mono text-[#8ca0c0]">{row.riskScore.toFixed(1)}</td>
+                    <td className="py-2 text-right mono text-[#8ca0c0]">{row.reservesScore.toFixed(1)}</td>
+                    <td className="py-2 text-right mono font-bold text-[#10b981]">{row.weightedScore.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-[#8ca0c0] mt-2">
+            Recommended option with current weighting: <span className="text-[#f0f4ff] font-semibold">{matrixRows[0]?.key}: {matrixRows[0]?.name}</span>
+          </p>
         </div>
       </Card>
 

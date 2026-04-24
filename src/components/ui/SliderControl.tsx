@@ -11,6 +11,8 @@ interface SliderControlProps {
   format?: (v: number) => string;
   onChange: (v: number) => void;
   colorClass?: string;
+  impactText?: string;
+  impactTone?: 'neutral' | 'positive' | 'negative';
 }
 
 export function SliderControl({
@@ -24,6 +26,8 @@ export function SliderControl({
   format,
   onChange,
   colorClass = 'text-[#3b82f6]',
+  impactText,
+  impactTone = 'neutral',
 }: SliderControlProps) {
   const display = format ? format(value) : `${value > 0 ? '+' : ''}${value.toFixed(step < 1 ? 1 : 0)}${unit}`;
   const pct = ((value - min) / (max - min)) * 100;
@@ -64,6 +68,16 @@ export function SliderControl({
         <span className="text-[9px] text-[#4a6080]">{min}{unit}</span>
         <span className="text-[9px] text-[#4a6080]">{max}{unit}</span>
       </div>
+      {impactText && (
+        <p
+          className="text-[9px] mt-1"
+          style={{
+            color: impactTone === 'positive' ? '#10b981' : impactTone === 'negative' ? '#ef4444' : '#4a6080',
+          }}
+        >
+          {impactText}
+        </p>
+      )}
     </div>
   );
 }
@@ -76,6 +90,8 @@ interface NumberInputProps {
   suffix?: string;
   tooltip?: string;
   onChange: (v: number) => void;
+  impactText?: string;
+  impactTone?: 'neutral' | 'positive' | 'negative';
 }
 
 export function NumberInput({
@@ -86,6 +102,8 @@ export function NumberInput({
   suffix = 'k',
   tooltip,
   onChange,
+  impactText,
+  impactTone = 'neutral',
 }: NumberInputProps) {
   return (
     <div className="mb-3">
@@ -115,6 +133,16 @@ export function NumberInput({
         />
         <span className="text-[11px] text-[#4a6080]">{suffix}</span>
       </div>
+      {impactText && (
+        <p
+          className="text-[9px] mt-1"
+          style={{
+            color: impactTone === 'positive' ? '#10b981' : impactTone === 'negative' ? '#ef4444' : '#4a6080',
+          }}
+        >
+          {impactText}
+        </p>
+      )}
     </div>
   );
 }
@@ -124,36 +152,50 @@ interface ToggleProps {
   value: boolean;
   tooltip?: string;
   onChange: (v: boolean) => void;
+  impactText?: string;
+  impactTone?: 'neutral' | 'positive' | 'negative';
 }
 
-export function Toggle({ label, value, tooltip, onChange }: ToggleProps) {
+export function Toggle({ label, value, tooltip, onChange, impactText, impactTone = 'neutral' }: ToggleProps) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <div className="flex items-center gap-1">
-        <span className="text-[11px] text-[#8ca0c0] font-medium">{label}</span>
-        {tooltip && (
-          <div className="tooltip">
-            <span title={tooltip}>
-              <Info size={10} className="text-[#4a6080] cursor-help" />
-            </span>
-            <div className="tooltip-content">{tooltip}</div>
-          </div>
-        )}
-      </div>
-      <button
-        onClick={() => onChange(!value)}
-        title={tooltip ?? `${label}: currently ${value ? 'enabled' : 'disabled'}`}
-        aria-label={label}
-        className={`relative w-9 h-5 rounded-full transition-colors ${
-          value ? 'bg-[#3b82f6]' : 'bg-[rgba(99,179,237,0.15)] hover:bg-[rgba(99,179,237,0.22)]'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-            value ? 'translate-x-4' : 'translate-x-0'
+    <div className="mb-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-[#8ca0c0] font-medium">{label}</span>
+          {tooltip && (
+            <div className="tooltip">
+              <span title={tooltip}>
+                <Info size={10} className="text-[#4a6080] cursor-help" />
+              </span>
+              <div className="tooltip-content">{tooltip}</div>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={() => onChange(!value)}
+          title={tooltip ?? `${label}: currently ${value ? 'enabled' : 'disabled'}`}
+          aria-label={label}
+          className={`relative w-9 h-5 rounded-full transition-colors ${
+            value ? 'bg-[#3b82f6]' : 'bg-[rgba(99,179,237,0.15)] hover:bg-[rgba(99,179,237,0.22)]'
           }`}
-        />
-      </button>
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+              value ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+      {impactText && (
+        <p
+          className="text-[9px] mt-1"
+          style={{
+            color: impactTone === 'positive' ? '#10b981' : impactTone === 'negative' ? '#ef4444' : '#4a6080',
+          }}
+        >
+          {impactText}
+        </p>
+      )}
     </div>
   );
 }

@@ -6,6 +6,8 @@ import {
 import { useMTFSStore } from '../store/mtfsStore';
 import { SliderControl, NumberInput, Toggle } from './ui/SliderControl';
 import { RichTooltip } from './ui/RichTooltip';
+import { runCalculations } from '../engine/calculations';
+import type { Assumptions } from '../types/financial';
 
 // ── Authority Config section (Item 22) ────────────────────────────────────────
 function AuthorityConfigSection() {
@@ -108,6 +110,9 @@ function Section({ title, icon, defaultOpen = true, children, accent = '#3b82f6'
 export function Sidebar() {
   const {
     assumptions,
+    baseline,
+    savingsProposals,
+    result,
     updateFunding,
     updateExpenditure,
     updatePolicy,
@@ -117,6 +122,54 @@ export function Sidebar() {
     accessibilityPreset,
     setAccessibilityPreset,
   } = useMTFSStore();
+
+  const fmtSignedK = (value: number) => {
+    const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+    const abs = Math.abs(value);
+    if (abs >= 1000) {
+      return `${sign}£${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m`;
+    }
+    return `${sign}£${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`;
+  };
+
+  const getDeltaLabel = (nextAssumptions: Assumptions) => {
+    const nextResult = runCalculations(nextAssumptions, baseline, savingsProposals);
+    const deltaGap = nextResult.totalGap - result.totalGap;
+    const deltaY5Reserves = (nextResult.years[4]?.totalClosingReserves ?? 0) - (result.years[4]?.totalClosingReserves ?? 0);
+    const tone = deltaGap < -1 ? 'positive' : deltaGap > 1 ? 'negative' : 'neutral';
+    return {
+      text: `Δ5yr gap ${fmtSignedK(deltaGap)} · ΔY5 reserves ${fmtSignedK(deltaY5Reserves)}`,
+      tone: tone as 'neutral' | 'positive' | 'negative',
+    };
+  };
+
+  const impact = React.useMemo(() => {
+    const makeFunding = (key: keyof Assumptions['funding'], delta: number) =>
+      getDeltaLabel({ ...assumptions, funding: { ...assumptions.funding, [key]: assumptions.funding[key] + delta } });
+    const makeExpenditure = (key: keyof Assumptions['expenditure'], delta: number) =>
+      getDeltaLabel({ ...assumptions, expenditure: { ...assumptions.expenditure, [key]: assumptions.expenditure[key] + delta } });
+    const makePolicy = (key: keyof Assumptions['policy'], value: number | boolean) =>
+      getDeltaLabel({ ...assumptions, policy: { ...assumptions.policy, [key]: value } });
+    const makeAdvanced = (key: keyof Assumptions['advanced'], value: number | boolean) =>
+      getDeltaLabel({ ...assumptions, advanced: { ...assumptions.advanced, [key]: value } });
+
+    return {
+      councilTaxIncrease: makeFunding('councilTaxIncrease', 0.5),
+      businessRatesGrowth: makeFunding('businessRatesGrowth', 0.5),
+      grantVariation: makeFunding('grantVariation', 0.5),
+      feesChargesElasticity: makeFunding('feesChargesElasticity', 0.5),
+      payAward: makeExpenditure('payAward', 0.5),
+      nonPayInflation: makeExpenditure('nonPayInflation', 0.5),
+      ascDemandGrowth: makeExpenditure('ascDemandGrowth', 0.5),
+      cscDemandGrowth: makeExpenditure('cscDemandGrowth', 0.5),
+      savingsDeliveryRisk: makeExpenditure('savingsDeliveryRisk', 5),
+      annualSavingsTarget: makePolicy('annualSavingsTarget', assumptions.policy.annualSavingsTarget + 500),
+      reservesUsage: makePolicy('reservesUsage', assumptions.policy.reservesUsage + 500),
+      socialCareProtection: makePolicy('socialCareProtection', !assumptions.policy.socialCareProtection),
+      realTermsToggle: makeAdvanced('realTermsToggle', !assumptions.advanced.realTermsToggle),
+      inflationRate: makeAdvanced('inflationRate', assumptions.advanced.inflationRate + 0.5),
+    };
+  }, [assumptions, baseline, savingsProposals, result.totalGap, result.years]);
 
   return (
     <aside className="w-72 shrink-0 h-screen overflow-y-auto bg-[#0a1120] border-r border-[rgba(99,179,237,0.08)] flex flex-col">
@@ -172,6 +225,8 @@ export function Sidebar() {
             value={assumptions.funding.councilTaxIncrease}
             min={0} max={10} step={0.01}
             tooltip="Annual council tax percentage increase. Maximum 4.99% without referendum (2.99% core + 2% ASC precept under current referendum principles)."
+            impactText={impact.councilTaxIncrease.text}
+            impactTone={impact.councilTaxIncrease.tone}
             onChange={(v) => updateFunding('councilTaxIncrease', v)}
           />
           <SliderControl
@@ -179,6 +234,8 @@ export function Sidebar() {
             value={assumptions.funding.businessRatesGrowth}
             min={-5} max={8} step={0.1}
             tooltip="Retained business rates growth assumption. Subject to reset from future fair funding reviews."
+            impactText={impact.businessRatesGrowth.text}
+            impactTone={impact.businessRatesGrowth.tone}
             onChange={(v) => updateFunding('businessRatesGrowth', v)}
           />
           <SliderControl
@@ -187,6 +244,8 @@ export function Sidebar() {
             min={-10} max={5} step={0.1}
             tooltip="Year-on-year change in core central government grants. Negative values reflect real-terms grant reductions."
             colorClass={assumptions.funding.grantVariation < 0 ? 'text-[#ef4444]' : 'text-[#10b981]'}
+            impactText={impact.grantVariation.text}
+            impactTone={impact.grantVariation.tone}
             onChange={(v) => updateFunding('grantVariation', v)}
           />
           <SliderControl
@@ -194,6 +253,8 @@ export function Sidebar() {
             value={assumptions.funding.feesChargesElasticity}
             min={-2} max={10} step={0.1}
             tooltip="Annual growth in fees and charges income. Reflects pricing decisions and volume demand changes."
+            impactText={impact.feesChargesElasticity.text}
+            impactTone={impact.feesChargesElasticity.tone}
             onChange={(v) => updateFunding('feesChargesElasticity', v)}
           />
         </Section>
@@ -207,6 +268,8 @@ export function Sidebar() {
             min={0} max={10} step={0.1}
             tooltip="Assumed annual pay settlement for all staff. Pay typically represents 50–60% of total expenditure in local government."
             colorClass="text-[#f59e0b]"
+            impactText={impact.payAward.text}
+            impactTone={impact.payAward.tone}
             onChange={(v) => updateExpenditure('payAward', v)}
           />
           <SliderControl
@@ -215,6 +278,8 @@ export function Sidebar() {
             min={0} max={12} step={0.1}
             tooltip="General inflation on non-pay costs: energy, contracts, supplies. Linked to CPI/RPI."
             colorClass="text-[#f59e0b]"
+            impactText={impact.nonPayInflation.text}
+            impactTone={impact.nonPayInflation.tone}
             onChange={(v) => updateExpenditure('nonPayInflation', v)}
           />
           <SliderControl
@@ -223,6 +288,8 @@ export function Sidebar() {
             min={0} max={15} step={0.1}
             tooltip="Adult Social Care demand growth. Driven by demographic pressures (ageing population) and increasing complexity of need."
             colorClass="text-[#f59e0b]"
+            impactText={impact.ascDemandGrowth.text}
+            impactTone={impact.ascDemandGrowth.tone}
             onChange={(v) => updateExpenditure('ascDemandGrowth', v)}
           />
           <SliderControl
@@ -231,6 +298,8 @@ export function Sidebar() {
             min={0} max={15} step={0.1}
             tooltip="Children's Social Care demand growth. Driven by referral rates, looked after children numbers, and SEND pressures."
             colorClass="text-[#f59e0b]"
+            impactText={impact.cscDemandGrowth.text}
+            impactTone={impact.cscDemandGrowth.tone}
             onChange={(v) => updateExpenditure('cscDemandGrowth', v)}
           />
           <SliderControl
@@ -241,6 +310,8 @@ export function Sidebar() {
             tooltip="Percentage of targeted savings that will actually be delivered. 100% assumes full delivery; lower values apply an achievement risk adjustment."
             colorClass={assumptions.expenditure.savingsDeliveryRisk < 75 ? 'text-[#ef4444]' : 'text-[#10b981]'}
             format={(v) => `${v.toFixed(0)}%`}
+            impactText={impact.savingsDeliveryRisk.text}
+            impactTone={impact.savingsDeliveryRisk.tone}
             onChange={(v) => updateExpenditure('savingsDeliveryRisk', v)}
           />
         </Section>
@@ -255,6 +326,8 @@ export function Sidebar() {
             prefix="£"
             suffix="k/yr"
             tooltip="The gross savings target the authority is seeking to deliver each year. Subject to delivery risk adjustment."
+            impactText={impact.annualSavingsTarget.text}
+            impactTone={impact.annualSavingsTarget.tone}
             onChange={(v) => updatePolicy('annualSavingsTarget', v)}
           />
           <NumberInput
@@ -264,12 +337,16 @@ export function Sidebar() {
             prefix="£"
             suffix="k/yr"
             tooltip="Planned annual reserves drawdown to contribute to gap mitigation. 0 means no planned reserves use."
+            impactText={impact.reservesUsage.text}
+            impactTone={impact.reservesUsage.tone}
             onChange={(v) => updatePolicy('reservesUsage', v)}
           />
           <Toggle
             label="Protect Social Care"
             value={assumptions.policy.socialCareProtection}
             tooltip="Ring-fence adult social care funding, preventing cuts to ASC services as a savings option."
+            impactText={impact.socialCareProtection.text}
+            impactTone={impact.socialCareProtection.tone}
             onChange={(v) => updatePolicy('socialCareProtection', v)}
           />
         </Section>
@@ -281,6 +358,8 @@ export function Sidebar() {
             label="Real Terms Mode"
             value={assumptions.advanced.realTermsToggle}
             tooltip="When enabled, all figures are deflated to base-year real terms using the inflation rate below."
+            impactText={impact.realTermsToggle.text}
+            impactTone={impact.realTermsToggle.tone}
             onChange={(v) => updateAdvanced('realTermsToggle', v)}
           />
           {assumptions.advanced.realTermsToggle && (
@@ -290,6 +369,8 @@ export function Sidebar() {
               min={0} max={10} step={0.1}
               tooltip="The inflation rate used to convert nominal figures to real terms."
               colorClass="text-[#06b6d4]"
+              impactText={impact.inflationRate.text}
+              impactTone={impact.inflationRate.tone}
               onChange={(v) => updateAdvanced('inflationRate', v)}
             />
           )}

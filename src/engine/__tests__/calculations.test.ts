@@ -246,3 +246,110 @@ describe('baseline input connectivity', () => {
     expect(changed.years[0].totalExpenditure).toBe(base.years[0].totalExpenditure);
   });
 });
+
+describe('assumption engine control connectivity', () => {
+  it('funding sliders change funding outputs', () => {
+    const baseA = clone(DEFAULT_ASSUMPTIONS);
+    const base = runCalculations(baseA, clone(DEFAULT_BASELINE), []);
+
+    const ctUp = clone(baseA);
+    ctUp.funding.councilTaxIncrease += 1;
+    expect(runCalculations(ctUp, clone(DEFAULT_BASELINE), []).years[4].councilTax).toBeGreaterThan(base.years[4].councilTax);
+
+    const brUp = clone(baseA);
+    brUp.funding.businessRatesGrowth += 1;
+    expect(runCalculations(brUp, clone(DEFAULT_BASELINE), []).years[4].businessRates).toBeGreaterThan(base.years[4].businessRates);
+
+    const grantUp = clone(baseA);
+    grantUp.funding.grantVariation += 1;
+    expect(runCalculations(grantUp, clone(DEFAULT_BASELINE), []).years[4].coreGrants).toBeGreaterThan(base.years[4].coreGrants);
+
+    const feesUp = clone(baseA);
+    feesUp.funding.feesChargesElasticity += 1;
+    expect(runCalculations(feesUp, clone(DEFAULT_BASELINE), []).years[4].feesAndCharges).toBeGreaterThan(base.years[4].feesAndCharges);
+  });
+
+  it('expenditure sliders change expenditure outputs', () => {
+    const baseA = clone(DEFAULT_ASSUMPTIONS);
+    const base = runCalculations(baseA, clone(DEFAULT_BASELINE), []);
+
+    const payUp = clone(baseA);
+    payUp.expenditure.payAward += 1;
+    expect(runCalculations(payUp, clone(DEFAULT_BASELINE), []).years[4].totalExpenditure).toBeGreaterThan(base.years[4].totalExpenditure);
+
+    const nonPayUp = clone(baseA);
+    nonPayUp.expenditure.nonPayInflation += 1;
+    expect(runCalculations(nonPayUp, clone(DEFAULT_BASELINE), []).years[4].totalExpenditure).toBeGreaterThan(base.years[4].totalExpenditure);
+
+    const ascUp = clone(baseA);
+    ascUp.expenditure.ascDemandGrowth += 1;
+    expect(runCalculations(ascUp, clone(DEFAULT_BASELINE), []).years[4].ascPressure).toBeGreaterThan(base.years[4].ascPressure);
+
+    const cscUp = clone(baseA);
+    cscUp.expenditure.cscDemandGrowth += 1;
+    expect(runCalculations(cscUp, clone(DEFAULT_BASELINE), []).years[4].cscPressure).toBeGreaterThan(base.years[4].cscPressure);
+
+    // Savings delivery risk only impacts outputs when a savings target/proposals exist.
+    const pressureBaseline = clone(DEFAULT_BASELINE);
+    pressureBaseline.councilTax = 0;
+    pressureBaseline.businessRates = 0;
+    pressureBaseline.coreGrants = 0;
+    pressureBaseline.feesAndCharges = 0;
+    const withTarget = clone(baseA);
+    withTarget.policy.annualSavingsTarget = 5_000;
+    const goodDelivery = clone(withTarget);
+    goodDelivery.expenditure.savingsDeliveryRisk = 95;
+    const weakDelivery = clone(withTarget);
+    weakDelivery.expenditure.savingsDeliveryRisk = 60;
+    expect(runCalculations(weakDelivery, pressureBaseline, []).totalGap).toBeGreaterThan(runCalculations(goodDelivery, pressureBaseline, []).totalGap);
+  });
+
+  it('policy controls change mitigation outputs', () => {
+    const baseA = clone(DEFAULT_ASSUMPTIONS);
+    const pressureBaseline = clone(DEFAULT_BASELINE);
+    pressureBaseline.councilTax = 0;
+    pressureBaseline.businessRates = 0;
+    pressureBaseline.coreGrants = 0;
+    pressureBaseline.feesAndCharges = 0;
+
+    const noSavings = clone(baseA);
+    noSavings.policy.annualSavingsTarget = 0;
+    const withSavings = clone(baseA);
+    withSavings.policy.annualSavingsTarget = 2_000;
+    expect(runCalculations(withSavings, pressureBaseline, []).totalGap).toBeLessThan(runCalculations(noSavings, pressureBaseline, []).totalGap);
+
+    const noReservesUse = clone(baseA);
+    noReservesUse.policy.reservesUsage = 0;
+    const withReservesUse = clone(baseA);
+    withReservesUse.policy.reservesUsage = 1_000;
+    expect(runCalculations(withReservesUse, pressureBaseline, []).years.some((y) => y.reservesDrawdown > 0)).toBe(true);
+    expect(runCalculations(noReservesUse, pressureBaseline, []).years.every((y) => y.reservesDrawdown === 0)).toBe(true);
+
+    const protectionOn = clone(baseA);
+    protectionOn.policy.annualSavingsTarget = 2_000;
+    protectionOn.policy.socialCareProtection = true;
+    const protectionOff = clone(baseA);
+    protectionOff.policy.annualSavingsTarget = 2_000;
+    protectionOff.policy.socialCareProtection = false;
+    expect(runCalculations(protectionOn, pressureBaseline, []).totalGap).toBeGreaterThan(runCalculations(protectionOff, pressureBaseline, []).totalGap);
+  });
+
+  it('advanced controls change real-terms outputs', () => {
+    const nominal = clone(DEFAULT_ASSUMPTIONS);
+    nominal.advanced.realTermsToggle = false;
+    const realTerms = clone(DEFAULT_ASSUMPTIONS);
+    realTerms.advanced.realTermsToggle = true;
+    const nominalResult = runCalculations(nominal, clone(DEFAULT_BASELINE), []);
+    const realTermsResult = runCalculations(realTerms, clone(DEFAULT_BASELINE), []);
+    expect(realTermsResult.years[4].totalFunding).toBeLessThan(nominalResult.years[4].totalFunding);
+
+    const rtLowDeflator = clone(DEFAULT_ASSUMPTIONS);
+    rtLowDeflator.advanced.realTermsToggle = true;
+    rtLowDeflator.advanced.inflationRate = 1;
+    const rtHighDeflator = clone(DEFAULT_ASSUMPTIONS);
+    rtHighDeflator.advanced.realTermsToggle = true;
+    rtHighDeflator.advanced.inflationRate = 4;
+    expect(runCalculations(rtHighDeflator, clone(DEFAULT_BASELINE), []).years[4].totalFunding)
+      .toBeLessThan(runCalculations(rtLowDeflator, clone(DEFAULT_BASELINE), []).years[4].totalFunding);
+  });
+});

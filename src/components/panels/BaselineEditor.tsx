@@ -267,10 +267,43 @@ function CustomLineRow({ line }: { line: CustomServiceLine }) {
 
 // ── CSV Import panel ───────────────────────────────────────────────────────────
 function CsvImportPanel() {
-  const { importBaselinePartial } = useMTFSStore();
+  const { baseline, importBaselinePartial } = useMTFSStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({ type: 'idle', message: '' });
   const [isBuildingTemplate, setIsBuildingTemplate] = useState(false);
+
+  const analyzeBaselineImport = (partial: Partial<typeof baseline>) => {
+    const warnings: string[] = [];
+    const numericEntries = Object.entries(partial).filter(([, value]) => typeof value === 'number') as Array<[string, number]>;
+    const importedKeys = new Set(numericEntries.map(([key]) => key));
+    const minimumExpected = ['councilTax', 'businessRates', 'coreGrants', 'pay', 'nonPay'];
+    const missingKeyHints = minimumExpected.filter((key) => !importedKeys.has(key));
+    if (missingKeyHints.length > 0) {
+      warnings.push(`Missing key fields (${missingKeyHints.join(', ')}). Add these to improve model reliability.`);
+    }
+
+    for (const [key, value] of numericEntries) {
+      if (value < 0) warnings.push(`${key} is negative (${value.toLocaleString('en-GB')}). Check sign conventions.`);
+      if (Math.abs(value) > 10_000_000) {
+        warnings.push(`${key} looks too large (${value.toLocaleString('en-GB')} in £000s). You may have uploaded £ not £000s.`);
+      }
+      const current = (baseline as unknown as Record<string, number>)[key];
+      if (typeof current === 'number' && current > 0) {
+        const ratio = value / current;
+        if (ratio > 5 || ratio < 0.2) {
+          warnings.push(`${key} differs materially from current baseline (ratio ${ratio.toFixed(2)}x).`);
+        }
+      }
+    }
+
+    const totalReserves = (partial.generalFundReserves ?? baseline.generalFundReserves) + (partial.earmarkedReserves ?? baseline.earmarkedReserves);
+    const minThreshold = partial.reservesMinimumThreshold ?? baseline.reservesMinimumThreshold;
+    if (minThreshold > totalReserves) {
+      warnings.push('reservesMinimumThreshold exceeds total opening reserves. Review reserves inputs before relying on resilience outputs.');
+    }
+
+    return warnings;
+  };
 
   const downloadImportTemplate = async () => {
     setIsBuildingTemplate(true);
@@ -379,8 +412,13 @@ function CsvImportPanel() {
     if (ext === 'xlsx' || ext === 'xls') {
       const result = await parseBaselineSpreadsheet(file);
       if (result.success && result.baseline) {
+        const warnings = analyzeBaselineImport(result.baseline);
         importBaselinePartial(result.baseline);
-        setStatus({ type: 'success', message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}` });
+        const warningText = warnings.length > 0 ? ` Warnings: ${warnings.slice(0, 3).join(' | ')}${warnings.length > 3 ? ` | +${warnings.length - 3} more` : ''}` : '';
+        setStatus({
+          type: 'success',
+          message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}.${warningText}`,
+        });
       } else {
         setStatus({ type: 'error', message: result.errors.join('; ') });
       }
@@ -393,8 +431,13 @@ function CsvImportPanel() {
       const text = ev.target?.result as string;
       const result = parseBaselineCsv(text);
       if (result.success && result.baseline) {
+        const warnings = analyzeBaselineImport(result.baseline);
         importBaselinePartial(result.baseline);
-        setStatus({ type: 'success', message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}` });
+        const warningText = warnings.length > 0 ? ` Warnings: ${warnings.slice(0, 3).join(' | ')}${warnings.length > 3 ? ` | +${warnings.length - 3} more` : ''}` : '';
+        setStatus({
+          type: 'success',
+          message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}.${warningText}`,
+        });
       } else {
         setStatus({ type: 'error', message: result.errors.join('; ') });
       }
