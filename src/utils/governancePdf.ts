@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { type Styles } from 'jspdf-autotable';
 import type { Assumptions, AuthorityConfig, BaselineData, MTFSResult, SavingsProposal } from '../types/financial';
 import { runCalculations } from '../engine/calculations';
 
@@ -9,13 +9,74 @@ const MODEL_VERSION = 'MTFS DSS v7.0';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
-  return `GBP ${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+  return `£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
 }
 
 function fmtChartValue(v: number) {
   const abs = Math.abs(v);
   const sign = v < 0 ? '-' : '';
   return `${sign}£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+}
+
+function fmtPct(v: number, dp = 1) {
+  return `${v.toFixed(dp)}%`;
+}
+
+function boolText(v: boolean) {
+  return v ? 'Yes' : 'No';
+}
+
+function metricText(value: unknown): string {
+  if (typeof value === 'number') return fmtK(value);
+  if (typeof value === 'boolean') return boolText(value);
+  if (typeof value === 'string') return value || '—';
+  if (value === null || value === undefined) return '—';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    if (value.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
+      return value.map((item) => (typeof item === 'number' ? fmtK(item) : String(item))).join(' | ');
+    }
+    return `Array(${value.length})`;
+  }
+  return String(value);
+}
+
+function flattenPrimitiveObject(
+  value: unknown,
+  prefix: string,
+  rows: Array<[string, string]>
+) {
+  if (!value || typeof value !== 'object') {
+    if (prefix) rows.push([prefix, metricText(value)]);
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (value.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
+      rows.push([prefix, metricText(value)]);
+      return;
+    }
+    rows.push([prefix, `Array(${value.length})`]);
+    return;
+  }
+
+  Object.entries(value as Record<string, unknown>).forEach(([k, v]) => {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object') {
+      if (Array.isArray(v)) {
+        if (v.length === 0) {
+          rows.push([key, '[]']);
+        } else if (v.every((item) => ['string', 'number', 'boolean'].includes(typeof item))) {
+          rows.push([key, metricText(v)]);
+        } else {
+          rows.push([`${key}.count`, String(v.length)]);
+        }
+      } else {
+        flattenPrimitiveObject(v, key, rows);
+      }
+      return;
+    }
+    rows.push([key, metricText(v)]);
+  });
 }
 
 function sanitize(input: string) {
@@ -200,6 +261,87 @@ function addFooter(doc: jsPDF, authorityName: string, generatedAt: Date) {
   }
 }
 
+interface PremiumTableOptions {
+  startY: number;
+  head?: string[][];
+  body: Array<Array<string | number>>;
+  columnStyles?: Record<string, Partial<Styles>>;
+  fontSize?: number;
+}
+
+function renderPremiumTable(doc: jsPDF, options: PremiumTableOptions) {
+  autoTable(doc, {
+    startY: options.startY,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    head: options.head,
+    body: options.body,
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: options.fontSize ?? 8.6,
+      cellPadding: 4.1,
+      textColor: [30, 41, 59],
+      lineColor: [226, 232, 240],
+      lineWidth: 0.6,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: 255,
+      fontStyle: 'bold',
+      lineColor: [15, 23, 42],
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: options.columnStyles,
+  });
+  return finalY(doc, options.startY);
+}
+
+interface KpiCard {
+  label: string;
+  value: string;
+  hint: string;
+  tone: 'blue' | 'amber' | 'red' | 'green';
+}
+
+function drawKpiCards(doc: jsPDF, y: number, cards: KpiCard[]) {
+  const width = doc.internal.pageSize.getWidth() - PAGE_MARGIN * 2;
+  const gap = 10;
+  const cardW = (width - gap * 3) / 4;
+  const cardH = 76;
+  const palette: Record<KpiCard['tone'], { fill: [number, number, number]; stroke: [number, number, number]; value: [number, number, number] }> = {
+    blue: { fill: [239, 246, 255], stroke: [147, 197, 253], value: [30, 64, 175] },
+    amber: { fill: [255, 247, 237], stroke: [253, 186, 116], value: [154, 52, 18] },
+    red: { fill: [254, 242, 242], stroke: [252, 165, 165], value: [153, 27, 27] },
+    green: { fill: [240, 253, 244], stroke: [134, 239, 172], value: [21, 128, 61] },
+  };
+
+  cards.slice(0, 4).forEach((card, idx) => {
+    const x = PAGE_MARGIN + idx * (cardW + gap);
+    const c = palette[card.tone];
+    doc.setFillColor(c.fill[0], c.fill[1], c.fill[2]);
+    doc.setDrawColor(c.stroke[0], c.stroke[1], c.stroke[2]);
+    doc.roundedRect(x, y, cardW, cardH, 8, 8, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(card.label, x + 10, y + 16);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(c.value[0], c.value[1], c.value[2]);
+    doc.text(card.value, x + 10, y + 37);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    const hintLines = doc.splitTextToSize(card.hint, cardW - 20);
+    doc.text(hintLines, x + 10, y + 53);
+  });
+  return y + cardH + 12;
+}
+
 export function exportCommitteeReportPdf(
   result: MTFSResult,
   assumptions: Assumptions,
@@ -212,46 +354,59 @@ export function exportCommitteeReportPdf(
   const reportDate = resolveReportDate(authorityConfig, now);
   const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
   const baseScenario = scenarioRows[0].result;
+  const reportPeriod = authorityConfig.reportingPeriod
+    || `${now.getFullYear()}/${String(now.getFullYear() + 1).slice(2)} - ${now.getFullYear() + 4}/${String(now.getFullYear() + 5).slice(2)}`;
+  const pageW = doc.internal.pageSize.getWidth();
 
   doc.setFillColor(15, 23, 42);
-  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 142, 'F');
+  doc.rect(0, 0, pageW, 158, 'F');
+  doc.setFillColor(30, 64, 175);
+  doc.rect(0, 158, pageW, 8, 'F');
+  doc.setTextColor(148, 163, 184);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
+  doc.setFontSize(9);
+  doc.text('FORMAL COMMITTEE PAPER', PAGE_MARGIN, 34);
   doc.setTextColor(255, 255, 255);
-  doc.text('MTFS Committee Report', PAGE_MARGIN, 64);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.text('MTFS Committee Report', PAGE_MARGIN, 68);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.text('Governance-grade financial strategy and assurance brief', PAGE_MARGIN, 88);
+  doc.setFontSize(10.5);
+  doc.text('Governance-grade financial strategy, risk and assurance pack', PAGE_MARGIN, 88);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(226, 232, 240);
+  doc.text(`${authorityConfig.authorityName || 'Local Authority'} | ${reportPeriod}`, PAGE_MARGIN, 108);
+  doc.text(`Report date: ${reportDate.toLocaleDateString('en-GB')}`, pageW - PAGE_MARGIN, 56, { align: 'right' });
+  doc.text(`Generated: ${now.toLocaleString('en-GB')}`, pageW - PAGE_MARGIN, 72, { align: 'right' });
+  doc.text(`Model: ${MODEL_VERSION}`, pageW - PAGE_MARGIN, 88, { align: 'right' });
 
   doc.setTextColor(15, 23, 42);
-  let y = 174;
+  let y = 188;
   y = writeSectionTitle(doc, y, 'Authority Context');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 9, cellPadding: 4.5 },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 170 } },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 190 } },
     body: [
       ['Authority', authorityConfig.authorityName || 'Local Authority'],
-      ['Reporting Period', authorityConfig.reportingPeriod || `${now.getFullYear()}/${String(now.getFullYear() + 1).slice(2)} - ${now.getFullYear() + 4}/${String(now.getFullYear() + 5).slice(2)}`],
+      ['Reporting Period', reportPeriod],
       ['Section 151 Officer', authorityConfig.section151Officer || 'Not specified'],
       ['Chief Executive', authorityConfig.chiefExecutive || 'Not specified'],
       ['Report Date', reportDate.toLocaleDateString('en-GB')],
-      ['Generated', now.toLocaleString('en-GB')],
+      ['Generated Timestamp', now.toLocaleString('en-GB')],
     ],
-  });
-  y = finalY(doc, y) + 12;
+  }) + 12;
 
   y = writeSectionTitle(doc, y, 'Executive Summary');
   const summary = result.totalGap <= 0
-    ? `Model outputs indicate a balanced MTFS across the planning period. Overall risk score is ${result.overallRiskScore.toFixed(0)}/100 (${riskBand(result.overallRiskScore)}). Focus should shift to delivery assurance and reserve resilience.`
-    : `Model outputs indicate a five-year gap of ${fmtK(result.totalGap)}, with a structural component of ${fmtK(result.totalStructuralGap)}. Annual corrective action equivalent to ${fmtK(result.requiredSavingsToBalance)} is required to restore sustainable balance.`;
+    ? `Model outputs indicate a balanced MTFS across the planning period. Overall risk is ${result.overallRiskScore.toFixed(0)}/100 (${riskBand(result.overallRiskScore)}). Delivery assurance and reserves discipline should now be the focus.`
+    : `Model outputs indicate a five-year gap of ${fmtK(result.totalGap)} and structural pressure of ${fmtK(result.totalStructuralGap)}. Corrective recurring action of ${fmtK(result.requiredSavingsToBalance)} per annum is required to restore sustainable balance.`;
   y = writeParagraph(doc, y, summary);
-  y += 6;
+  y += 4;
   y = writeParagraph(
     doc,
     y,
-    `Headline risks include reserves position (${result.yearReservesExhausted ? `exhausted by ${result.yearReservesExhausted}` : 'not exhausted in period'}) and overall risk score ${result.overallRiskScore.toFixed(0)}/100. Section 151 statutory risk trigger: ${result.s114Triggered ? 'At risk' : 'No immediate trigger'}.`
+    `Statutory position: s.114 trigger status is ${result.s114Triggered ? 'at risk' : 'not currently triggered'}. Reserves are ${result.yearReservesExhausted ? `projected exhausted by ${result.yearReservesExhausted}` : 'not exhausted in-period'}.`
   );
   y += 6;
   y = writeCallout(
@@ -259,37 +414,61 @@ export function exportCommitteeReportPdf(
     y,
     'Decision Required',
     result.totalGap <= 0
-      ? 'Approve the recommended monitoring cadence and reserve protection controls. No immediate corrective savings decision is required under current assumptions.'
-      : `Approve a recurring mitigation package equivalent to ${fmtK(result.requiredSavingsToBalance)} per annum and confirm contingency triggers if delivery falls below plan.`,
+      ? 'Approve monitoring cadence, reserves protection controls, and clear trigger thresholds for intervention.'
+      : `Approve a recurring mitigation package equivalent to ${fmtK(result.requiredSavingsToBalance)} per annum, with a contingency trigger if delivery underperforms.`,
     result.totalGap <= 0 ? 'blue' : 'amber'
   );
 
-  y += 10;
+  y = ensureSpace(doc, y, 100);
+  y = drawKpiCards(doc, y, [
+    {
+      label: 'Five-Year Gap',
+      value: fmtK(result.totalGap),
+      hint: 'Cumulative net budget pressure over the horizon.',
+      tone: result.totalGap > 0 ? 'red' : 'green',
+    },
+    {
+      label: 'Structural Gap',
+      value: fmtK(result.totalStructuralGap),
+      hint: 'Recurring imbalance after removing one-off effects.',
+      tone: result.totalStructuralGap > 0 ? 'amber' : 'green',
+    },
+    {
+      label: 'Overall Risk',
+      value: `${result.overallRiskScore.toFixed(0)}/100`,
+      hint: `Risk band: ${riskBand(result.overallRiskScore)}`,
+      tone: result.overallRiskScore >= 60 ? 'red' : result.overallRiskScore >= 40 ? 'amber' : 'blue',
+    },
+    {
+      label: 'Y5 Reserves Ratio',
+      value: fmtPct(result.reservesToNetBudget, 1),
+      hint: 'Closing reserves as % of Y5 funding.',
+      tone: result.reservesToNetBudget < 5 ? 'red' : 'blue',
+    },
+  ]);
+
   y = ensureSpace(doc, y, 220);
   y = writeSectionTitle(doc, y, 'Decision Dashboard');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 9, cellPadding: 4.5 },
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 220 } },
     body: [
       ['5-Year Cumulative Gap', fmtK(result.totalGap)],
       ['Structural Gap', fmtK(result.totalStructuralGap)],
       ['Required Annual Savings', fmtK(result.requiredSavingsToBalance)],
-      ['Council Tax Equivalent (Year 1)', `${result.councilTaxEquivalent.toFixed(2)}%`],
+      ['Council Tax Equivalent (Year 1)', fmtPct(result.councilTaxEquivalent, 2)],
       ['Overall Risk Score', `${result.overallRiskScore.toFixed(0)}/100 (${riskBand(result.overallRiskScore)})`],
-      ['Reserves-to-Budget (Year 5)', `${result.reservesToNetBudget.toFixed(1)}%`],
+      ['Reserves-to-Budget (Year 5)', fmtPct(result.reservesToNetBudget, 1)],
       ['Year Reserves Exhausted', result.yearReservesExhausted ?? 'Not exhausted in period'],
       ['s.114 Trigger Assessment', result.s114Triggered ? `At risk (${result.s114Reasons.join('; ') || 'see risk section'})` : 'No immediate trigger'],
     ],
-  });
-  y = finalY(doc, y) + 10;
+  }) + 8;
 
-  y = ensureSpace(doc, y, 120);
+  y = ensureSpace(doc, y, 124);
   y = drawCompactTrendBars(
     doc,
     y,
-    'Yearly Raw Gap Trend (compact)',
+    'Yearly Raw Gap Trend',
     result.years.map((r) => `Y${r.year}`),
     result.years.map((r) => r.rawGap),
     [239, 68, 68]
@@ -298,39 +477,33 @@ export function exportCommitteeReportPdf(
   y = drawCompactTrendBars(
     doc,
     y,
-    'Closing Reserves Trend (compact)',
+    'Closing Reserves Trend',
     result.years.map((r) => `Y${r.year}`),
     result.years.map((r) => r.totalClosingReserves),
     [59, 130, 246]
   );
   y += 8;
 
-  y = ensureSpace(doc, y, 210);
+  y = ensureSpace(doc, y, 220);
   y = writeSectionTitle(doc, y, 'Scenario Comparator (Base / Optimistic / Stress)');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.5, cellPadding: 4 },
-    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
     head: [['Scenario', '5-Year Gap', 'Delta vs Base', 'Risk Score', 'Y5 Reserves', 'Confidence Note']],
     body: scenarioRows.map((s) => [
       s.name,
       fmtK(s.result.totalGap),
-      s.name === 'Base' ? '—' : fmtK(s.result.totalGap - baseScenario.totalGap),
+      s.name === 'Base' ? '-' : fmtK(s.result.totalGap - baseScenario.totalGap),
       `${s.result.overallRiskScore.toFixed(0)}/100`,
       fmtK(s.result.years[4]?.totalClosingReserves ?? 0),
       `${s.confidence}: ${s.note}`,
     ]),
-  });
-  y = finalY(doc, y) + 10;
+    fontSize: 8.4,
+  }) + 10;
 
-  y = ensureSpace(doc, y, 260);
+  y = ensureSpace(doc, y, 270);
   y = writeSectionTitle(doc, y, 'Year-by-Year Financial Position (GBP 000s)');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.2, cellPadding: 3.6 },
-    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
     head: [['Year', 'Funding', 'Expenditure', 'Raw Gap', 'Structural Gap', 'Delivered Savings', 'Closing Reserves', 'Flags']],
     body: result.years.map((row) => [
       row.label,
@@ -346,81 +519,72 @@ export function exportCommitteeReportPdf(
         row.unrealisticSavings ? 'Savings risk' : null,
       ].filter(Boolean).join(', ') || 'None',
     ]),
-  });
-  y = finalY(doc, y) + 10;
+    fontSize: 8.1,
+  }) + 10;
 
   y = ensureSpace(doc, y, 220);
   y = writeSectionTitle(doc, y, 'Assumptions and Programme Inputs');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.7, cellPadding: 4 },
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 220 } },
     body: [
-      ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}%`],
-      ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(2)}%`],
-      ['Grant Variation', `${assumptions.funding.grantVariation.toFixed(2)}%`],
-      ['Fees & Charges Growth', `${assumptions.funding.feesChargesElasticity.toFixed(2)}%`],
-      ['Pay Award', `${assumptions.expenditure.payAward.toFixed(2)}%`],
-      ['Non-Pay Inflation', `${assumptions.expenditure.nonPayInflation.toFixed(2)}%`],
-      ['ASC Demand Growth', `${assumptions.expenditure.ascDemandGrowth.toFixed(2)}%`],
-      ['CSC Demand Growth', `${assumptions.expenditure.cscDemandGrowth.toFixed(2)}%`],
-      ['Savings Delivery Risk', `${assumptions.expenditure.savingsDeliveryRisk.toFixed(1)}%`],
-      ['Savings Proposals', `${savingsProposals.length}`],
-      ['Custom Service Lines', `${baseline.customServiceLines.length}`],
-      ['Named Reserves', `${baseline.namedReserves.length}`],
+      ['Council Tax Increase', fmtPct(assumptions.funding.councilTaxIncrease, 2)],
+      ['Business Rates Growth', fmtPct(assumptions.funding.businessRatesGrowth, 2)],
+      ['Grant Variation', fmtPct(assumptions.funding.grantVariation, 2)],
+      ['Fees & Charges Growth', fmtPct(assumptions.funding.feesChargesElasticity, 2)],
+      ['Pay Award', fmtPct(assumptions.expenditure.payAward, 2)],
+      ['Non-Pay Inflation', fmtPct(assumptions.expenditure.nonPayInflation, 2)],
+      ['ASC Demand Growth', fmtPct(assumptions.expenditure.ascDemandGrowth, 2)],
+      ['CSC Demand Growth', fmtPct(assumptions.expenditure.cscDemandGrowth, 2)],
+      ['Savings Delivery Risk', fmtPct(assumptions.expenditure.savingsDeliveryRisk, 1)],
+      ['Savings Proposals', String(savingsProposals.length)],
+      ['Custom Service Lines', String(baseline.customServiceLines.length)],
+      ['Named Reserves', String(baseline.namedReserves.length)],
     ],
-  });
-  y = finalY(doc, y) + 10;
+  }) + 10;
 
   y = ensureSpace(doc, y, 220);
-  y = writeSectionTitle(doc, y, 'Risk Factors and Insights');
-  autoTable(doc, {
+  y = writeSectionTitle(doc, y, 'Risk Factors');
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.4, cellPadding: 3.8 },
-    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
     head: [['Risk Factor', 'Score', 'Level', 'Weight', 'Description']],
     body: result.riskFactors.map((f) => [
       f.name,
       `${f.score}/100`,
       f.level.toUpperCase(),
-      `${(f.weight * 100).toFixed(0)}%`,
+      fmtPct(f.weight * 100, 0),
       f.description,
     ]),
-  });
-  y = finalY(doc, y) + 8;
+    fontSize: 8.3,
+  }) + 8;
 
-  y = ensureSpace(doc, y, 180);
+  y = ensureSpace(doc, y, 190);
   y = writeSectionTitle(doc, y, 'Legal and Compliance Mapping');
-  autoTable(doc, {
+  y = renderPremiumTable(doc, {
     startY: y,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.3, cellPadding: 3.8 },
-    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
     head: [['Framework Reference', 'Check', 'Current Position']],
     body: [
-      ['Local Government Act 2003 s25', 'Robustness of estimates', result.totalGap <= 0 ? 'Improved; balanced plan modelled' : `Gap remains (${fmtK(result.totalGap)})`],
-      ['Local Government Act 2003 s25', 'Adequacy of reserves', result.reservesToNetBudget >= 5 ? `Within reference range (${result.reservesToNetBudget.toFixed(1)}%)` : `Below reference (${result.reservesToNetBudget.toFixed(1)}%)`],
+      ['Local Government Act 2003 s25', 'Robustness of estimates', result.totalGap <= 0 ? 'Balanced central case modelled' : `Gap remains (${fmtK(result.totalGap)})`],
+      ['Local Government Act 2003 s25', 'Adequacy of reserves', result.reservesToNetBudget >= 5 ? `Within reference range (${fmtPct(result.reservesToNetBudget, 1)})` : `Below reference (${fmtPct(result.reservesToNetBudget, 1)})`],
       ['Section 114 risk trigger', 'Statutory distress indicators', result.s114Triggered ? `At risk (${result.s114Reasons.join('; ') || 'see narrative'})` : 'No immediate trigger under current assumptions'],
       ['CIPFA Prudential Code', 'Authorised/Operational boundary tests', result.treasuryBreaches.length > 0 ? result.treasuryBreaches.join('; ') : 'No treasury indicator breach flagged'],
     ],
-  });
-  y = finalY(doc, y) + 10;
+    fontSize: 8.2,
+  }) + 10;
 
   const topInsights = result.insights.slice(0, 8);
   if (topInsights.length > 0) {
-    y = ensureSpace(doc, y, 120);
+    y = ensureSpace(doc, y, 130);
     y = writeSectionTitle(doc, y, 'Key Insights and Recommended Actions');
     topInsights.forEach((insight, idx) => {
-      y = ensureSpace(doc, y, 42);
+      y = ensureSpace(doc, y, 44);
       y = writeParagraph(
         doc,
         y,
         `${idx + 1}. [${insight.type.toUpperCase()}] ${insight.title}: ${insight.body}${insight.action ? ` Action: ${insight.action}` : ''}`,
         8.8
       );
-      y += 2;
+      y += 1;
     });
   }
 
@@ -430,33 +594,40 @@ export function exportCommitteeReportPdf(
   const assurance = result.totalGap <= 0 && !result.yearReservesExhausted && result.reservesToNetBudget >= 5
     ? 'Positive assurance can be provided, subject to normal quarterly monitoring and delivery controls.'
     : 'Qualified assurance is advised: the authority should consider further mitigations before approval.';
+  sy = writeCallout(
+    doc,
+    sy,
+    'Formal Assurance Position',
+    assurance,
+    result.totalGap <= 0 && !result.yearReservesExhausted ? 'blue' : 'amber'
+  );
   sy = writeParagraph(
     doc,
     sy,
-    `In accordance with Section 25 of the Local Government Act 2003, the Section 151 Officer (${authorityConfig.section151Officer || 'Not specified'}) has reviewed estimate robustness and reserve adequacy. ${assurance}`
+    `In accordance with Section 25 of the Local Government Act 2003, the Section 151 Officer (${authorityConfig.section151Officer || 'Not specified'}) has reviewed estimate robustness and reserve adequacy against the current MTFS assumptions and model outputs.`,
+    9
   );
-  sy += 10;
+  sy += 8;
   const qualificationPoints: string[] = [];
   if (result.totalGap > 0) qualificationPoints.push(`Budget gap remains at ${fmtK(result.totalGap)} over five years.`);
   if (result.yearReservesExhausted) qualificationPoints.push(`Reserves are projected to be exhausted by ${result.yearReservesExhausted}.`);
-  if (result.reservesToNetBudget < 5) qualificationPoints.push(`Reserves-to-budget ratio (${result.reservesToNetBudget.toFixed(1)}%) is below prudent reference level.`);
+  if (result.reservesToNetBudget < 5) qualificationPoints.push(`Reserves-to-budget ratio (${fmtPct(result.reservesToNetBudget, 1)}) is below prudent reference level.`);
   if (result.structuralDeficitFlag) qualificationPoints.push('Structural deficit remains and requires recurring mitigations.');
   if (qualificationPoints.length === 0) qualificationPoints.push('No material qualification points flagged under current assumptions.');
-  qualificationPoints.forEach((point, idx) => {
-    sy = ensureSpace(doc, sy, 28);
-    sy = writeParagraph(doc, sy, `${idx + 1}. ${point}`, 9);
-  });
+  sy = renderPremiumTable(doc, {
+    startY: sy,
+    head: [['Qualification Checklist']],
+    body: qualificationPoints.map((point) => [point]),
+    fontSize: 8.7,
+  }) + 8;
 
   doc.addPage();
   let ay = PAGE_MARGIN;
   ay = writeSectionTitle(doc, ay, 'Appendix: Methodology, Glossary and Data Notes');
   ay = writeParagraph(doc, ay, 'Methodology summary: deterministic, driver-based forecasting with explicit treatment of recurring vs one-off measures and reserve adequacy checks.', 9);
   ay += 4;
-  autoTable(doc, {
+  ay = renderPremiumTable(doc, {
     startY: ay,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.2, cellPadding: 3.6 },
-    headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
     head: [['Glossary Term', 'Definition']],
     body: [
       ['Structural gap', 'Recurring shortfall after removing one-off items.'],
@@ -464,14 +635,11 @@ export function exportCommitteeReportPdf(
       ['Reserves-to-budget ratio', 'Year 5 closing reserves as a percentage of Year 5 funding.'],
       ['s.114 trigger indicator', 'Composite warning based on reserve exhaustion, persistent deficits and risk score.'],
     ],
-  });
-  ay = finalY(doc, ay) + 8;
+    fontSize: 8.2,
+  }) + 8;
   ay = ensureSpace(doc, ay, 180);
-  autoTable(doc, {
+  ay = renderPremiumTable(doc, {
     startY: ay,
-    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
-    styles: { fontSize: 8.2, cellPadding: 3.6 },
-    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
     head: [['Data Definition', 'Current Value / Source']],
     body: [
       ['Assumption set', `${MODEL_VERSION} / Report Date ${reportDate.toLocaleDateString('en-GB')} / Generated ${now.toLocaleString('en-GB')}`],
@@ -479,16 +647,217 @@ export function exportCommitteeReportPdf(
       ['Named reserves', `${baseline.namedReserves.length} lines`],
       ['Custom service lines', `${baseline.customServiceLines.length} lines`],
       ['Assurance wording', assurance],
-      ['Audit trail excerpt', result.insights.slice(0, 2).map((i) => i.title).join(' | ') || 'No flagged insight excerpt'],
+      ['Insight excerpt', result.insights.slice(0, 2).map((i) => i.title).join(' | ') || 'No flagged insight excerpt'],
     ],
-  });
-  ay = finalY(doc, ay) + 8;
+    fontSize: 8.2,
+  }) + 8;
   ay = writeParagraph(
     doc,
     ay,
     'Limitations and assurance: model outputs support decision-making and do not replace Section 151 professional judgement. Calibration against authority accounts and treasury strategy is required before statutory sign-off.',
     8.8
   );
+
+  doc.addPage();
+  let my = PAGE_MARGIN;
+  my = writeSectionTitle(doc, my, 'Appendix: Comprehensive Metrics Pack');
+  my = writeParagraph(
+    doc,
+    my,
+    'This appendix includes the full model metrics set used in the web app, including technical year fields, baseline configuration, and register-level schedules.',
+    9
+  );
+  my += 4;
+
+  my = ensureSpace(doc, my, 220);
+  my = writeSectionTitle(doc, my, 'All MTFS Output Metrics (Top-Level)');
+  my = renderPremiumTable(doc, {
+    startY: my,
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 240 } },
+    body: [
+      ['totalGap', fmtK(result.totalGap)],
+      ['totalStructuralGap', fmtK(result.totalStructuralGap)],
+      ['totalCumulativeGap', fmtK(result.totalCumulativeGap)],
+      ['requiredSavingsToBalance', fmtK(result.requiredSavingsToBalance)],
+      ['councilTaxEquivalent', fmtPct(result.councilTaxEquivalent, 2)],
+      ['reservesToNetBudget', fmtPct(result.reservesToNetBudget, 1)],
+      ['savingsAsBudgetPct', fmtPct(result.savingsAsBudgetPct, 1)],
+      ['overallRiskScore', `${result.overallRiskScore.toFixed(0)}/100`],
+      ['fundingVolatilityScore', `${result.fundingVolatilityScore.toFixed(0)}/100`],
+      ['structuralDeficitFlag', boolText(result.structuralDeficitFlag)],
+      ['yearReservesExhausted', result.yearReservesExhausted ?? 'Not exhausted in period'],
+      ['recommendedMinimumReserves', fmtK(result.recommendedMinimumReserves)],
+      ['effectiveMinimumReservesThreshold', fmtK(result.effectiveMinimumReservesThreshold)],
+      ['grantsExpiringInYears', result.grantsExpiringInYears.length > 0 ? result.grantsExpiringInYears.join(', ') : 'None'],
+      ['s114Triggered', boolText(result.s114Triggered)],
+      ['s114Reasons', result.s114Reasons.length > 0 ? result.s114Reasons.join('; ') : 'None'],
+      ['treasuryBreaches', result.treasuryBreaches.length > 0 ? result.treasuryBreaches.join('; ') : 'None'],
+      ['mrpCharges', result.mrpCharges.map((v, i) => `Y${i + 1}:${fmtK(v)}`).join(' | ')],
+    ],
+    fontSize: 8.1,
+  }) + 8;
+
+  my = ensureSpace(doc, my, 260);
+  my = writeSectionTitle(doc, my, 'YearResult Technical Metrics (All Core Fields)');
+  const yearSeries = result.years.slice(0, 5);
+  const technicalRows: Array<Array<string>> = [
+    ['totalFunding', ...yearSeries.map((yRow) => fmtK(yRow.totalFunding))],
+    ['councilTax', ...yearSeries.map((yRow) => fmtK(yRow.councilTax))],
+    ['businessRates', ...yearSeries.map((yRow) => fmtK(yRow.businessRates))],
+    ['coreGrants', ...yearSeries.map((yRow) => fmtK(yRow.coreGrants))],
+    ['feesAndCharges', ...yearSeries.map((yRow) => fmtK(yRow.feesAndCharges))],
+    ['payBase', ...yearSeries.map((yRow) => fmtK(yRow.payBase))],
+    ['payInflationImpact', ...yearSeries.map((yRow) => fmtK(yRow.payInflationImpact))],
+    ['nonPayBase', ...yearSeries.map((yRow) => fmtK(yRow.nonPayBase))],
+    ['nonPayInflationImpact', ...yearSeries.map((yRow) => fmtK(yRow.nonPayInflationImpact))],
+    ['ascPressure', ...yearSeries.map((yRow) => fmtK(yRow.ascPressure))],
+    ['cscPressure', ...yearSeries.map((yRow) => fmtK(yRow.cscPressure))],
+    ['otherServiceExp', ...yearSeries.map((yRow) => fmtK(yRow.otherServiceExp))],
+    ['capitalFinancingCost', ...yearSeries.map((yRow) => fmtK(yRow.capitalFinancingCost))],
+    ['reservesRebuildContribution', ...yearSeries.map((yRow) => fmtK(yRow.reservesRebuildContribution))],
+    ['contractIndexationCost', ...yearSeries.map((yRow) => fmtK(yRow.contractIndexationCost))],
+    ['investToSaveNetImpact', ...yearSeries.map((yRow) => fmtK(yRow.investToSaveNetImpact))],
+    ['incomeGenerationIncome', ...yearSeries.map((yRow) => fmtK(yRow.incomeGenerationIncome))],
+    ['mrpCharge', ...yearSeries.map((yRow) => fmtK(yRow.mrpCharge))],
+    ['customLinesTotalExpenditure', ...yearSeries.map((yRow) => fmtK(yRow.customLinesTotalExpenditure))],
+    ['grossExpenditureBeforeSavings', ...yearSeries.map((yRow) => fmtK(yRow.grossExpenditureBeforeSavings))],
+    ['deliveredSavings', ...yearSeries.map((yRow) => fmtK(yRow.deliveredSavings))],
+    ['recurringDeliveredSavings', ...yearSeries.map((yRow) => fmtK(yRow.recurringDeliveredSavings))],
+    ['oneOffDeliveredSavings', ...yearSeries.map((yRow) => fmtK(yRow.oneOffDeliveredSavings))],
+    ['totalExpenditure', ...yearSeries.map((yRow) => fmtK(yRow.totalExpenditure))],
+    ['rawGap', ...yearSeries.map((yRow) => fmtK(yRow.rawGap))],
+    ['structuralGap', ...yearSeries.map((yRow) => fmtK(yRow.structuralGap))],
+    ['reservesDrawdown', ...yearSeries.map((yRow) => fmtK(yRow.reservesDrawdown))],
+    ['netGap', ...yearSeries.map((yRow) => fmtK(yRow.netGap))],
+    ['generalFundOpeningBalance', ...yearSeries.map((yRow) => fmtK(yRow.generalFundOpeningBalance))],
+    ['earmarkedOpeningBalance', ...yearSeries.map((yRow) => fmtK(yRow.earmarkedOpeningBalance))],
+    ['totalOpeningReserves', ...yearSeries.map((yRow) => fmtK(yRow.totalOpeningReserves))],
+    ['generalFundClosingBalance', ...yearSeries.map((yRow) => fmtK(yRow.generalFundClosingBalance))],
+    ['earmarkedClosingBalance', ...yearSeries.map((yRow) => fmtK(yRow.earmarkedClosingBalance))],
+    ['totalClosingReserves', ...yearSeries.map((yRow) => fmtK(yRow.totalClosingReserves))],
+    ['reservesBelowThreshold', ...yearSeries.map((yRow) => boolText(yRow.reservesBelowThreshold))],
+    ['reservesExhausted', ...yearSeries.map((yRow) => boolText(yRow.reservesExhausted))],
+    ['structuralDeficit', ...yearSeries.map((yRow) => boolText(yRow.structuralDeficit))],
+    ['overReliantOnReserves', ...yearSeries.map((yRow) => boolText(yRow.overReliantOnReserves))],
+    ['unrealisticSavings', ...yearSeries.map((yRow) => boolText(yRow.unrealisticSavings))],
+  ];
+  my = renderPremiumTable(doc, {
+    startY: my,
+    head: [['Metric', 'Y1', 'Y2', 'Y3', 'Y4', 'Y5']],
+    body: technicalRows,
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 150 } },
+    fontSize: 7.5,
+  }) + 8;
+
+  my = ensureSpace(doc, my, 180);
+  my = writeSectionTitle(doc, my, 'Assumptions (Full)');
+  const assumptionRows: Array<[string, string]> = [];
+  flattenPrimitiveObject(assumptions, '', assumptionRows);
+  my = renderPremiumTable(doc, {
+    startY: my,
+    body: assumptionRows,
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 230 } },
+    fontSize: 8.0,
+  }) + 8;
+
+  my = ensureSpace(doc, my, 200);
+  my = writeSectionTitle(doc, my, 'Baseline Configuration (Flattened)');
+  const baselineRows: Array<[string, string]> = [];
+  flattenPrimitiveObject(baseline, '', baselineRows);
+  my = renderPremiumTable(doc, {
+    startY: my,
+    body: baselineRows,
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 250 } },
+    fontSize: 7.8,
+  }) + 8;
+
+  if (baseline.customServiceLines.length > 0) {
+    my = ensureSpace(doc, my, 180);
+    my = writeSectionTitle(doc, my, 'Custom Service Line Register');
+    my = renderPremiumTable(doc, {
+      startY: my,
+      head: [['Name', 'Category', 'Base', 'Inflation Driver', 'Manual %', 'Demand %', 'Recurring', 'Notes']],
+      body: baseline.customServiceLines.map((line) => [
+        line.name || 'Unnamed',
+        line.category,
+        fmtK(line.baseValue),
+        line.inflationDriver,
+        fmtPct(line.manualInflationRate, 2),
+        fmtPct(line.demandGrowthRate, 2),
+        boolText(line.isRecurring),
+        line.notes || '-',
+      ]),
+      fontSize: 7.7,
+    }) + 8;
+  }
+
+  if (baseline.namedReserves.length > 0) {
+    my = ensureSpace(doc, my, 200);
+    my = writeSectionTitle(doc, my, 'Named Reserves Register');
+    my = renderPremiumTable(doc, {
+      startY: my,
+      head: [['Reserve', 'Type', 'Opening', 'Min', 'Contrib Y1..Y5', 'Draw Y1..Y5', 'Purpose']],
+      body: baseline.namedReserves.map((r) => [
+        r.name || 'Unnamed',
+        r.isEarmarked ? 'Earmarked' : 'General Fund',
+        fmtK(r.openingBalance),
+        fmtK(r.minimumBalance),
+        r.plannedContributions.map((v) => fmtK(v)).join(' | '),
+        r.plannedDrawdowns.map((v) => fmtK(v)).join(' | '),
+        r.purpose || '-',
+      ]),
+      fontSize: 7.7,
+    }) + 8;
+  }
+
+  my = ensureSpace(doc, my, 220);
+  my = writeSectionTitle(doc, my, 'Savings Programme Register and Delivery');
+  const savingsRows = savingsProposals.map((proposal) => {
+    const deliveries = result.years.map((yr) =>
+      yr.savingsProposalResults.find((p) => p.id === proposal.id)?.deliveredValue ?? 0
+    );
+    const totalDelivered = deliveries.reduce((sum, v) => sum + v, 0);
+    return [
+      proposal.name || 'Unnamed',
+      proposal.category,
+      proposal.ragStatus.toUpperCase(),
+      proposal.responsibleOfficer || '-',
+      fmtK(proposal.grossValue),
+      fmtPct(proposal.achievementRate, 1),
+      `Y${proposal.deliveryYear}`,
+      boolText(proposal.isRecurring),
+      ...deliveries.map((v) => fmtK(v)),
+      fmtK(totalDelivered),
+    ];
+  });
+  my = renderPremiumTable(doc, {
+    startY: my,
+    head: [[
+      'Proposal', 'Category', 'RAG', 'Owner', 'Gross',
+      'Achv %', 'Start', 'Recurring', 'Deliv Y1', 'Deliv Y2', 'Deliv Y3', 'Deliv Y4', 'Deliv Y5', 'Total Delivered',
+    ]],
+    body: savingsRows.length > 0 ? savingsRows : [[
+      'No savings proposals configured', '-', '-', '-', '-',
+      '-', '-', '-', '-', '-', '-', '-', '-', '-',
+    ]],
+    fontSize: 7.3,
+  }) + 8;
+
+  my = ensureSpace(doc, my, 180);
+  my = writeSectionTitle(doc, my, 'Insights Register (Complete)');
+  my = renderPremiumTable(doc, {
+    startY: my,
+    head: [['Type', 'Title', 'Body', 'Action']],
+    body: result.insights.length > 0
+      ? result.insights.map((insight) => [
+        insight.type.toUpperCase(),
+        insight.title,
+        insight.body,
+        insight.action ?? '-',
+      ])
+      : [['INFO', 'No active insight', 'No insight messages were generated.', '-']],
+    fontSize: 8.0,
+  });
 
   addFooter(doc, authorityConfig.authorityName, now);
   doc.save(`MTFS_Committee_Report_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
