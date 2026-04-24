@@ -165,9 +165,10 @@ export function OverviewPanel() {
   );
 
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="layout-grid-12">
       {/* Left: Charts */}
-      <div className="col-span-2 space-y-4">
+      <div className="layout-span-8 space-y-4">
+        <div className="section-frame">
         <Card className="bg-[rgba(16,185,129,0.06)] border-[rgba(16,185,129,0.22)]">
           <div className="p-3">
             <p className="text-[10px] uppercase tracking-widest text-[#10b981] font-semibold">
@@ -181,7 +182,9 @@ export function OverviewPanel() {
           </div>
         </Card>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="section-frame-divider" />
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <Card className="bg-[rgba(59,130,246,0.08)]">
             <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">What Changed</p>
             <p className="text-[11px] text-[#8ca0c0] mt-1">
@@ -202,6 +205,8 @@ export function OverviewPanel() {
           </Card>
         </div>
 
+        <div className="section-frame-divider" />
+
         <Card className="bg-[rgba(59,130,246,0.04)] border-[rgba(59,130,246,0.18)]">
           <CardHeader>
             <div className="flex items-center gap-1.5">
@@ -221,9 +226,11 @@ export function OverviewPanel() {
             </ul>
           </div>
         </Card>
+        </div>
 
         {/* Status strip */}
-        <div className="grid grid-cols-5 gap-2">
+        <div className="section-frame">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
           {years.map((y) => {
             const ok = y.rawGap <= 0;
             const color = ok ? '#10b981' : '#ef4444';
@@ -248,7 +255,9 @@ export function OverviewPanel() {
             );
           })}
         </div>
+        </div>
 
+        <div className="section-frame">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-1.5">
@@ -256,7 +265,7 @@ export function OverviewPanel() {
               <RichTooltip content="Year-by-year RAG status with plain-English reasoning based on gap and reserves resilience." />
             </div>
           </CardHeader>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2">
             {yearStory.map((row) => (
               <div key={row.key} className="rounded-lg p-2 bg-[#080c14] border border-[rgba(99,179,237,0.12)]">
                 <p className="text-[10px] text-[#8ca0c0] mb-2">{row.year}</p>
@@ -280,7 +289,9 @@ export function OverviewPanel() {
             ))}
           </div>
         </Card>
+        </div>
 
+        <div className="section-frame">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-1.5">
@@ -288,7 +299,7 @@ export function OverviewPanel() {
               <RichTooltip content="Counterfactual view with no savings programme and no planned reserves use." />
             </div>
           </CardHeader>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div className="rounded-lg bg-[#080c14] p-3 border border-[rgba(99,179,237,0.12)]">
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Current Plan Gap</p>
               <p className="mono text-[14px] font-bold text-[#f59e0b] mt-1">{fmtK(result.totalGap)}</p>
@@ -305,8 +316,10 @@ export function OverviewPanel() {
             </div>
           </div>
         </Card>
+        </div>
 
         {/* Funding vs Expenditure */}
+        <div className="section-frame">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-1.5">
@@ -350,9 +363,11 @@ export function OverviewPanel() {
             </ResponsiveContainer>
           </div>
         </Card>
+        </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {/* Gap bar */}
+          <div className="section-frame">
           <Card>
             <CardHeader>
               <div className="flex items-center gap-1.5">
@@ -393,8 +408,10 @@ export function OverviewPanel() {
               </ResponsiveContainer>
             </div>
           </Card>
+          </div>
 
           {/* Reserves area */}
+          <div className="section-frame">
           <Card>
             <CardHeader>
               <div className="flex items-center gap-1.5">
@@ -436,8 +453,10 @@ export function OverviewPanel() {
               </ResponsiveContainer>
             </div>
           </Card>
+          </div>
         </div>
 
+        <div className="section-frame">
         <Card>
           <CardHeader>
             <div className="flex items-center gap-1.5">
@@ -445,7 +464,7 @@ export function OverviewPanel() {
               <RichTooltip content="Hover or focus terms to reveal plain-English financial definitions." />
             </div>
           </CardHeader>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {glossary.map((item) => (
               <button
                 key={item.term}
@@ -465,10 +484,11 @@ export function OverviewPanel() {
             ))}
           </div>
         </Card>
+        </div>
       </div>
 
       {/* Right: Insights */}
-      <div className="space-y-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+      <div className="layout-span-4 section-frame space-y-3 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
         <div className="text-[10px] font-bold uppercase tracking-widest text-[#4a6080] px-1">Live Insights</div>
         <InsightsPanel />
       </div>

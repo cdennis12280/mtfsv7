@@ -160,8 +160,10 @@ export default function App() {
           <Header />
           <KPIBar />
         </div>
-        <main id="main-workspace" className="flex-1 overflow-y-auto p-5 fade-in" key={activeTab}>
-          {PANELS[activeTab] ?? <OverviewPanel />}
+        <main id="main-workspace" className="workspace-scroll flex-1 overflow-y-auto p-5 fade-in" key={activeTab}>
+          <div className="app-content-frame">
+            {PANELS[activeTab] ?? <OverviewPanel />}
+          </div>
         </main>
       </div>
       <OnboardingCoach />

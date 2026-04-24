@@ -237,6 +237,75 @@ textarea:focus-visible {
   padding: calc(1rem * var(--density-pad));
 }
 
+.app-content-frame {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+.layout-grid-12 {
+  --layout-gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--layout-gap);
+}
+
+.layout-span-12 { grid-column: span 12 / span 12; }
+.layout-span-8 { grid-column: span 8 / span 8; }
+.layout-span-4 { grid-column: span 4 / span 4; }
+
+.section-frame {
+  border: 1px solid rgba(99, 179, 237, 0.14);
+  background: linear-gradient(180deg, rgba(13, 20, 33, 0.86) 0%, rgba(10, 17, 32, 0.86) 100%);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.section-frame-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: linear-gradient(90deg, rgba(99, 179, 237, 0) 0%, rgba(99, 179, 237, 0.18) 18%, rgba(99, 179, 237, 0.18) 82%, rgba(99, 179, 237, 0) 100%);
+}
+
+@media (max-width: 1536px) {
+  .app-content-frame {
+    max-width: 1280px;
+  }
+}
+
+@media (max-width: 1279px) {
+  .layout-grid-12 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .layout-span-8,
+  .layout-span-4,
+  .layout-span-12 {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1024px) {
+  .app-shell {
+    flex-direction: column;
+    height: 100vh;
+  }
+  #assumption-engine-sidebar {
+    width: 100% !important;
+    height: auto;
+    max-height: 42vh;
+    border-right: none;
+    border-bottom: 1px solid rgba(99, 179, 237, 0.08);
+  }
+  .workspace-scroll {
+    overflow-x: hidden;
+    padding: 12px;
+  }
+  .app-content-frame {
+    max-width: 100%;
+  }
+}
+
 .coach-root {
   position: fixed;
   inset: 0;
