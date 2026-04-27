@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, BarChart3, Users, Eye, Database, TrendingDown, PiggyBank, BookOpenText } from 'lucide-react';
+import { Activity, BarChart3, Users, Eye, Database, TrendingDown, PiggyBank, BookOpenText, Circle } from 'lucide-react';
 import { useMTFSStore } from '../store/mtfsStore';
 import clsx from 'clsx';
 import { RichTooltip } from './ui/RichTooltip';
@@ -22,7 +22,12 @@ const TABS = [
 
 const STRATEGIC_TABS = ['overview', 'gap', 'reserves', 'savings', 'insights', 'scenarios', 'section151'];
 
-export function Header() {
+interface HeaderProps {
+  themeMode: 'default' | 'professional-white';
+  onToggleTheme: () => void;
+}
+
+export function Header({ themeMode, onToggleTheme }: HeaderProps) {
   const {
     activeTab,
     setActiveTab,
@@ -81,6 +86,15 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={onToggleTheme}
+            title={themeMode === 'professional-white' ? 'Switch to default theme' : 'Switch to professional white theme'}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-[rgba(99,179,237,0.18)] text-[#8ca0c0] text-[10px] font-semibold hover:text-[#f0f4ff] hover:border-[rgba(99,179,237,0.3)] transition-colors"
+            aria-label="Toggle professional white theme"
+          >
+            <Circle size={10} className={themeMode === 'professional-white' ? 'fill-current' : ''} />
+            White
+          </button>
           <button
             onClick={openHelpGuide}
             title="Open comprehensive help guide in a separate window."

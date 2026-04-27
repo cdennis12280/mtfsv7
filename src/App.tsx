@@ -20,6 +20,10 @@ import { GovernancePanel } from './components/panels/GovernancePanel';
 import { useMTFSStore } from './store/mtfsStore';
 import './index.css';
 
+type ThemeMode = 'default' | 'professional-white';
+
+const THEME_STORAGE_KEY = 'mtfs-theme-mode-v1';
+
 const TOOLTIP_MAP: Array<{ match: RegExp; tip: string }> = [
   { match: /council tax/i, tip: 'Council Tax assumptions drive core recurring funding and compound annually.' },
   { match: /business rates/i, tip: 'Business Rates growth reflects retained local tax yield and national reset risk.' },
@@ -121,6 +125,11 @@ const PANELS: Record<string, React.ReactNode> = {
 
 export default function App() {
   const { activeTab, accessibilityPreset, densityMode } = useMTFSStore();
+  const [themeMode, setThemeMode] = React.useState<ThemeMode>(() => {
+    if (typeof window === 'undefined') return 'default';
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === 'professional-white' ? 'professional-white' : 'default';
+  });
 
   React.useEffect(() => {
     const root = document.getElementById('root');
@@ -152,12 +161,22 @@ export default function App() {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  }, [themeMode]);
+
+  const appThemeClass = themeMode === 'professional-white' ? 'theme-white' : '';
+
   return (
-    <div className={`app-shell preset-${accessibilityPreset} density-${densityMode} flex h-screen overflow-hidden`} style={{ background: '#080c14' }}>
+    <div className={`app-shell ${appThemeClass} preset-${accessibilityPreset} density-${densityMode} flex h-screen overflow-hidden`} style={{ background: 'var(--app-bg-base)' }}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="sticky top-0 z-20 bg-[#080c14]">
-          <Header />
+        <div className="sticky top-0 z-20" style={{ background: 'var(--app-bg-base)' }}>
+          <Header
+            themeMode={themeMode}
+            onToggleTheme={() => setThemeMode((current) => (current === 'default' ? 'professional-white' : 'default'))}
+          />
           <KPIBar />
         </div>
         <main id="main-workspace" className="workspace-scroll flex-1 overflow-y-auto p-5 fade-in" key={activeTab}>

@@ -18,14 +18,23 @@
   --radius-card: 14px;
   --shadow-card: 0 10px 30px rgba(2, 8, 20, 0.35);
   --shadow-card-hover: 0 16px 40px rgba(2, 8, 20, 0.5);
+  --app-bg-base: #080c14;
+  --app-bg-surface: #0a1120;
+  --app-bg-panel: #0f1a2d;
+  --app-bg-card: #101b2e;
+  --app-border-soft: rgba(99, 179, 237, 0.12);
+  --app-border-strong: rgba(99, 179, 237, 0.22);
+  --app-text-primary: #f0f4ff;
+  --app-text-secondary: #8ca0c0;
+  --app-text-muted: #4a6080;
 }
 
 * { box-sizing: border-box; }
 
 body {
   font-family: 'Inter', 'Avenir Next', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: var(--color-bg-base);
-  color: var(--color-text-primary);
+  background-color: var(--app-bg-base);
+  color: var(--app-text-primary);
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
@@ -426,4 +435,121 @@ textarea:focus-visible {
 
 .coach-btn-primary:hover:not(:disabled) {
   background: rgba(59, 130, 246, 0.4);
+}
+
+.theme-white {
+  --app-bg-base: #f3f6fb;
+  --app-bg-surface: #ffffff;
+  --app-bg-panel: #f8fbff;
+  --app-bg-card: #ffffff;
+  --app-border-soft: rgba(148, 163, 184, 0.35);
+  --app-border-strong: rgba(148, 163, 184, 0.5);
+  --app-text-primary: #0f172a;
+  --app-text-secondary: #334155;
+  --app-text-muted: #64748b;
+}
+
+.theme-white,
+.theme-white body {
+  background: var(--app-bg-base);
+  color: var(--app-text-primary);
+}
+
+.theme-white #top-header,
+.theme-white #kpi-rail,
+.theme-white #assumption-engine-sidebar {
+  background: var(--app-bg-surface) !important;
+  border-color: var(--app-border-soft) !important;
+}
+
+.theme-white .card-density {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  border-color: var(--app-border-soft) !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08) !important;
+}
+
+.theme-white .section-frame {
+  border-color: var(--app-border-soft);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.theme-white .premium-table thead th,
+.theme-white .premium-table.sticky-first th:first-child,
+.theme-white .premium-table.sticky-first td:first-child,
+.theme-white .premium-table.sticky-first tbody td:first-child {
+  background: #f8fbff;
+}
+
+.theme-white .premium-table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.theme-white .premium-table tbody tr:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.theme-white .tooltip-content {
+  background: #ffffff;
+  border-color: var(--app-border-soft);
+  color: var(--app-text-secondary);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+.theme-white .coach-card {
+  background: #ffffff;
+  border-color: var(--app-border-soft);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+}
+
+.theme-white .coach-close,
+.theme-white .coach-btn-secondary {
+  background: #f8fbff;
+  border-color: var(--app-border-soft);
+  color: var(--app-text-secondary);
+}
+
+.theme-white .coach-close:hover,
+.theme-white .coach-btn-secondary:hover:not(:disabled) {
+  color: var(--app-text-primary);
+}
+
+.theme-white input:not([type='range']),
+.theme-white select,
+.theme-white textarea {
+  background: #ffffff;
+  color: var(--app-text-primary);
+  border-color: var(--app-border-soft);
+}
+
+.theme-white [class*="bg-[#080c14"],
+.theme-white [class*="bg-[#0a1120"],
+.theme-white [class*="bg-[#0f1a2d"],
+.theme-white [class*="bg-[#101b2e"],
+.theme-white [class*="bg-[#111b2e"] {
+  background-color: #ffffff !important;
+}
+
+.theme-white [class*="border-[rgba(99,179,237"],
+.theme-white [class*="border-[rgba(123,187,237"] {
+  border-color: var(--app-border-soft) !important;
+}
+
+.theme-white [class*="bg-[rgba(99,179,237"],
+.theme-white [class*="hover:bg-[rgba(99,179,237"] {
+  background-color: rgba(37, 99, 235, 0.06) !important;
+}
+
+.theme-white [class*="text-[#f0f4ff"],
+.theme-white [class*="text-[#dbeafe"],
+.theme-white [class*="text-white"] {
+  color: var(--app-text-primary) !important;
+}
+
+.theme-white [class*="text-[#8ca0c0"],
+.theme-white [class*="text-[#93c5fd"] {
+  color: var(--app-text-secondary) !important;
+}
+
+.theme-white [class*="text-[#4a6080"] {
+  color: var(--app-text-muted) !important;
 }
