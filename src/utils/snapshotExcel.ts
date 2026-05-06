@@ -150,6 +150,14 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
     ['expenditure', 'ascDemandGrowth', a.expenditure.ascDemandGrowth, '%'],
     ['expenditure', 'cscDemandGrowth', a.expenditure.cscDemandGrowth, '%'],
     ['expenditure', 'savingsDeliveryRisk', a.expenditure.savingsDeliveryRisk, '%'],
+    ['expenditure', 'payAwardByFundingSource.general_fund', a.expenditure.payAwardByFundingSource.general_fund, '%'],
+    ['expenditure', 'payAwardByFundingSource.grant', a.expenditure.payAwardByFundingSource.grant, '%'],
+    ['expenditure', 'payAwardByFundingSource.other', a.expenditure.payAwardByFundingSource.other, '%'],
+    ['expenditure', 'payGroupSensitivity.default', a.expenditure.payGroupSensitivity.default, 'pp'],
+    ['expenditure', 'payGroupSensitivity.teachers', a.expenditure.payGroupSensitivity.teachers, 'pp'],
+    ['expenditure', 'payGroupSensitivity.njc', a.expenditure.payGroupSensitivity.njc, 'pp'],
+    ['expenditure', 'payGroupSensitivity.senior', a.expenditure.payGroupSensitivity.senior, 'pp'],
+    ['expenditure', 'payGroupSensitivity.other', a.expenditure.payGroupSensitivity.other, 'pp'],
     ['policy', 'annualSavingsTarget', a.policy.annualSavingsTarget, '£000'],
     ['policy', 'reservesUsage', a.policy.reservesUsage, '£000'],
     ['policy', 'socialCareProtection', String(a.policy.socialCareProtection), 'boolean'],
@@ -298,8 +306,10 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
   ];
 
   const contractRows = [
-    ['id', 'name', 'value', 'clause', 'bespokeRate'],
-    ...b.contractIndexationTracker.contracts.map((c) => [c.id, c.name, c.value, c.clause, c.bespokeRate]),
+    ['id', 'name', 'value', 'clause', 'bespokeRate', 'effectiveFromYear', 'reviewMonth', 'upliftMethod', 'fixedRate', 'customRate', 'phaseInMonths'],
+    ...b.contractIndexationTracker.contracts.map((c) => [
+      c.id, c.name, c.value, c.clause, c.bespokeRate, c.effectiveFromYear, c.reviewMonth, c.upliftMethod, c.fixedRate, c.customRate, c.phaseInMonths,
+    ]),
   ];
 
   const investRows = [
@@ -313,7 +323,7 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
   ];
 
   const scenarioRows = [
-    ['id', 'name', 'description', 'type', 'color', 'createdAt', 'councilTaxIncrease', 'businessRatesGrowth', 'grantVariation', 'feesChargesElasticity', 'payAward', 'nonPayInflation', 'ascDemandGrowth', 'cscDemandGrowth', 'savingsDeliveryRisk', 'annualSavingsTarget', 'reservesUsage', 'socialCareProtection', 'realTermsToggle', 'inflationRate', 'resultTotalGap', 'resultRiskScore'],
+    ['id', 'name', 'description', 'type', 'color', 'createdAt', 'councilTaxIncrease', 'businessRatesGrowth', 'grantVariation', 'feesChargesElasticity', 'payAward', 'nonPayInflation', 'ascDemandGrowth', 'cscDemandGrowth', 'savingsDeliveryRisk', 'payAwardByFundingSourceGeneralFund', 'payAwardByFundingSourceGrant', 'payAwardByFundingSourceOther', 'payGroupSensitivityDefault', 'payGroupSensitivityTeachers', 'payGroupSensitivityNJC', 'payGroupSensitivitySenior', 'payGroupSensitivityOther', 'annualSavingsTarget', 'reservesUsage', 'socialCareProtection', 'realTermsToggle', 'inflationRate', 'resultTotalGap', 'resultRiskScore'],
     ...snapshot.scenarios.map((s) => [
       s.id,
       s.name,
@@ -330,6 +340,14 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
       s.assumptions.expenditure.ascDemandGrowth,
       s.assumptions.expenditure.cscDemandGrowth,
       s.assumptions.expenditure.savingsDeliveryRisk,
+      s.assumptions.expenditure.payAwardByFundingSource.general_fund,
+      s.assumptions.expenditure.payAwardByFundingSource.grant,
+      s.assumptions.expenditure.payAwardByFundingSource.other,
+      s.assumptions.expenditure.payGroupSensitivity.default,
+      s.assumptions.expenditure.payGroupSensitivity.teachers,
+      s.assumptions.expenditure.payGroupSensitivity.njc,
+      s.assumptions.expenditure.payGroupSensitivity.senior,
+      s.assumptions.expenditure.payGroupSensitivity.other,
       s.assumptions.policy.annualSavingsTarget,
       s.assumptions.policy.reservesUsage,
       String(s.assumptions.policy.socialCareProtection),
@@ -497,6 +515,14 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
       if (field === 'ascDemandGrowth') assumptions.expenditure.ascDemandGrowth = toNumber(row.value, assumptions.expenditure.ascDemandGrowth);
       if (field === 'cscDemandGrowth') assumptions.expenditure.cscDemandGrowth = toNumber(row.value, assumptions.expenditure.cscDemandGrowth);
       if (field === 'savingsDeliveryRisk') assumptions.expenditure.savingsDeliveryRisk = Math.max(0, Math.min(100, toNumber(row.value, assumptions.expenditure.savingsDeliveryRisk)));
+      if (field === 'payAwardByFundingSource.general_fund') assumptions.expenditure.payAwardByFundingSource.general_fund = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.general_fund);
+      if (field === 'payAwardByFundingSource.grant') assumptions.expenditure.payAwardByFundingSource.grant = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.grant);
+      if (field === 'payAwardByFundingSource.other') assumptions.expenditure.payAwardByFundingSource.other = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.other);
+      if (field === 'payGroupSensitivity.default') assumptions.expenditure.payGroupSensitivity.default = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.default);
+      if (field === 'payGroupSensitivity.teachers') assumptions.expenditure.payGroupSensitivity.teachers = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.teachers);
+      if (field === 'payGroupSensitivity.njc') assumptions.expenditure.payGroupSensitivity.njc = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.njc);
+      if (field === 'payGroupSensitivity.senior') assumptions.expenditure.payGroupSensitivity.senior = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.senior);
+      if (field === 'payGroupSensitivity.other') assumptions.expenditure.payGroupSensitivity.other = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.other);
     }
     if (section === 'policy') {
       if (field === 'annualSavingsTarget') assumptions.policy.annualSavingsTarget = toNumber(row.value, assumptions.policy.annualSavingsTarget);
@@ -586,6 +612,12 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
       value: toNumber(r.value, 0),
       clause: toText(r.clause, 'bespoke') as BaselineData['contractIndexationTracker']['contracts'][number]['clause'],
       bespokeRate: toNumber(r.bespokeRate, 0),
+      effectiveFromYear: Math.max(1, Math.min(5, Math.round(toNumber(r.effectiveFromYear, 1)))) as 1 | 2 | 3 | 4 | 5,
+      reviewMonth: Math.max(1, Math.min(12, Math.round(toNumber(r.reviewMonth, 4)))),
+      upliftMethod: toText(r.upliftMethod, 'cpi') as BaselineData['contractIndexationTracker']['contracts'][number]['upliftMethod'],
+      fixedRate: toNumber(r.fixedRate, 0),
+      customRate: toNumber(r.customRate, toNumber(r.bespokeRate, 0)),
+      phaseInMonths: Math.max(0, Math.min(12, Math.round(toNumber(r.phaseInMonths, 0)))),
     }));
 
   baseline.investToSave.proposals = investRows
@@ -658,6 +690,18 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
           ascDemandGrowth: toNumber(r.ascDemandGrowth, assumptions.expenditure.ascDemandGrowth),
           cscDemandGrowth: toNumber(r.cscDemandGrowth, assumptions.expenditure.cscDemandGrowth),
           savingsDeliveryRisk: Math.max(0, Math.min(100, toNumber(r.savingsDeliveryRisk, assumptions.expenditure.savingsDeliveryRisk))),
+          payAwardByFundingSource: {
+            general_fund: toNumber(r.payAwardByFundingSourceGeneralFund, assumptions.expenditure.payAwardByFundingSource.general_fund),
+            grant: toNumber(r.payAwardByFundingSourceGrant, assumptions.expenditure.payAwardByFundingSource.grant),
+            other: toNumber(r.payAwardByFundingSourceOther, assumptions.expenditure.payAwardByFundingSource.other),
+          },
+          payGroupSensitivity: {
+            default: toNumber(r.payGroupSensitivityDefault, assumptions.expenditure.payGroupSensitivity.default),
+            teachers: toNumber(r.payGroupSensitivityTeachers, assumptions.expenditure.payGroupSensitivity.teachers),
+            njc: toNumber(r.payGroupSensitivityNJC, assumptions.expenditure.payGroupSensitivity.njc),
+            senior: toNumber(r.payGroupSensitivitySenior, assumptions.expenditure.payGroupSensitivity.senior),
+            other: toNumber(r.payGroupSensitivityOther, assumptions.expenditure.payGroupSensitivity.other),
+          },
         },
         policy: {
           annualSavingsTarget: toNumber(r.annualSavingsTarget, assumptions.policy.annualSavingsTarget),

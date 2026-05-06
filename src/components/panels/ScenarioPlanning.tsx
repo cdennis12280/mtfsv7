@@ -238,6 +238,30 @@ export function ScenarioPlanning() {
     ]
     : [];
 
+  const fundingStreamDeltas = compareScenario
+    ? (() => {
+      const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+      const current = {
+        councilTax: sum(result.years.map((y) => y.councilTax)),
+        businessRates: sum(result.years.map((y) => y.businessRates)),
+        grants: sum(result.years.map((y) => y.coreGrants)),
+        otherFunding: sum(result.years.map((y) => y.feesAndCharges)),
+      };
+      const target = {
+        councilTax: sum(compareScenario.result.years.map((y) => y.councilTax)),
+        businessRates: sum(compareScenario.result.years.map((y) => y.businessRates)),
+        grants: sum(compareScenario.result.years.map((y) => y.coreGrants)),
+        otherFunding: sum(compareScenario.result.years.map((y) => y.feesAndCharges)),
+      };
+      return [
+        { title: 'Council Tax', delta: target.councilTax - current.councilTax },
+        { title: 'Business Rates', delta: target.businessRates - current.businessRates },
+        { title: 'Grants', delta: target.grants - current.grants },
+        { title: 'Other Funding', delta: target.otherFunding - current.otherFunding },
+      ];
+    })()
+    : [];
+
   const pickDecision = (id: string) => decisionOptions.find((o) => o.id === id) ?? decisionOptions[0];
   const optionA = pickDecision(decisionA);
   const optionB = pickDecision(decisionB || decisionOptions[1]?.id || 'current');
@@ -747,6 +771,27 @@ export function ScenarioPlanning() {
               </div>
             )}
           </Card>
+
+          {compareScenario && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-1.5">
+                  <CardTitle>Funding Stream Delta (5-Year Total)</CardTitle>
+                  <RichTooltip content="Difference by funding stream between current assumptions and selected scenario." />
+                </div>
+              </CardHeader>
+              <div className="grid grid-cols-4 gap-2">
+                {fundingStreamDeltas.map((item) => (
+                  <div key={item.title} className="rounded-lg bg-[#080c14] border border-[rgba(99,179,237,0.12)] p-2.5">
+                    <p className="text-[10px] text-[#8ca0c0]">{item.title}</p>
+                    <p className="mono text-[13px] font-bold mt-1" style={{ color: item.delta >= 0 ? '#10b981' : '#ef4444' }}>
+                      {fmtK(item.delta)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Scenario Cards */}
           <div className="grid grid-cols-2 gap-3">

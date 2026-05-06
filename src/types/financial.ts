@@ -139,7 +139,28 @@ export interface PaySpineConfig {
   rows: PaySpineRow[];
 }
 
+export type FundingSource = 'general_fund' | 'grant' | 'other';
+export type PayAssumptionGroup = 'default' | 'teachers' | 'njc' | 'senior' | 'other';
+export type PayModelMode = 'pay_spine' | 'workforce_posts' | 'hybrid';
+
+export interface WorkforcePost {
+  id: string;
+  postId: string;
+  service: string;
+  fundingSource: FundingSource;
+  fte: number;
+  annualCost: number;
+  payAssumptionGroup: PayAssumptionGroup;
+}
+
+export interface WorkforceModel {
+  enabled: boolean;
+  mode: PayModelMode;
+  posts: WorkforcePost[];
+}
+
 export type ContractIndexationClause = 'cpi' | 'rpi' | 'nmw' | 'bespoke';
+export type ContractUpliftMethod = 'cpi' | 'rpi' | 'fixed' | 'custom';
 
 export interface ContractIndexationEntry {
   id: string;
@@ -147,6 +168,12 @@ export interface ContractIndexationEntry {
   value: number;                 // £000s
   clause: ContractIndexationClause;
   bespokeRate: number;           // %
+  effectiveFromYear: 1 | 2 | 3 | 4 | 5;
+  reviewMonth: number;           // 1-12
+  upliftMethod: ContractUpliftMethod;
+  fixedRate: number;             // %
+  customRate: number;            // %
+  phaseInMonths: number;         // 0-12
 }
 
 export interface ContractIndexationTracker {
@@ -180,6 +207,42 @@ export interface IncomeGenerationLine {
 export interface IncomeGenerationWorkbook {
   enabled: boolean;
   lines: IncomeGenerationLine[];
+}
+
+export interface GrowthProposal {
+  id: string;
+  name: string;
+  service: string;
+  owner: string;
+  value: number; // £000s full-year impact
+  deliveryYear: 1 | 2 | 3 | 4 | 5;
+  isRecurring: boolean;
+  confidence: number; // 0-100
+  yearlyPhasing: [number, number, number, number, number]; // % per year
+  notes: string;
+}
+
+export interface ManualAdjustment {
+  id: string;
+  service: string;
+  year: 1 | 2 | 3 | 4 | 5;
+  amount: number; // £000s (+ cost / - saving)
+  reason: string;
+}
+
+export interface ImportMappingProfile {
+  id: string;
+  name: string;
+  mappings: Record<string, string>; // source column -> internal baseline/assumption field
+  createdAt: string;
+}
+
+export interface OverlayImportRecord {
+  id: string;
+  sourceName: string;
+  importedAt: string;
+  mappedValues: Record<string, number>;
+  unmappedFields: string[];
 }
 
 export type ReservesAdequacyMethod = 'fixed' | 'pct_of_net_budget' | 'risk_based';
@@ -237,9 +300,14 @@ export interface BaselineData {
   riskBasedReserves: RiskBasedReservesConfig;
   reservesRecoveryPlan: ReservesRecoveryPlan;
   paySpineConfig: PaySpineConfig;
+  workforceModel: WorkforceModel;
   contractIndexationTracker: ContractIndexationTracker;
   investToSave: InvestToSaveConfig;
   incomeGenerationWorkbook: IncomeGenerationWorkbook;
+  growthProposals: GrowthProposal[];
+  manualAdjustments: ManualAdjustment[];
+  importMappingProfiles: ImportMappingProfile[];
+  overlayImports: OverlayImportRecord[];
   reservesAdequacyMethodology: ReservesAdequacyMethodology;
   treasuryIndicators: TreasuryIndicators;
   mrpCalculator: MrpCalculatorConfig;
@@ -259,6 +327,18 @@ export interface ExpenditureAssumptions {
   ascDemandGrowth: number;          // %
   cscDemandGrowth: number;          // %
   savingsDeliveryRisk: number;      // % achievement (authority-wide default)
+  payAwardByFundingSource: {
+    general_fund: number;
+    grant: number;
+    other: number;
+  };
+  payGroupSensitivity: {
+    default: number;
+    teachers: number;
+    njc: number;
+    senior: number;
+    other: number;
+  };
 }
 
 export interface PolicyLevers {
@@ -312,6 +392,9 @@ export interface YearResult {
   // Core expenditure components
   payBase: number;
   payInflationImpact: number;
+  generalFundPayPressure: number;
+  grantFundedPayPressure: number;
+  otherFundedPayPressure: number;
   nonPayBase: number;
   nonPayInflationImpact: number;
   ascPressure: number;
@@ -320,7 +403,17 @@ export interface YearResult {
   capitalFinancingCost: number;
   reservesRebuildContribution: number;
   contractIndexationCost: number;
+  contractIndexationBreakdown: Array<{
+    contractId: string;
+    name: string;
+    year: number;
+    method: ContractUpliftMethod;
+    effectiveFactor: number;
+    upliftCost: number;
+  }>;
   investToSaveNetImpact: number;
+  growthProposalsImpact: number;
+  manualAdjustmentsImpact: number;
   incomeGenerationIncome: number;
   mrpCharge: number;
 
@@ -354,6 +447,26 @@ export interface YearResult {
 
   // Savings programme detail
   savingsProposalResults: SavingsProposalYearResult[];
+  fundingBridge: {
+    baseline: {
+      councilTax: number;
+      businessRates: number;
+      grants: number;
+      otherFunding: number;
+    };
+    modelled: {
+      councilTax: number;
+      businessRates: number;
+      grants: number;
+      otherFunding: number;
+    };
+    deltas: {
+      councilTax: number;
+      businessRates: number;
+      grants: number;
+      otherFunding: number;
+    };
+  };
 
   // Sustainability flags
   structuralDeficit: boolean;
@@ -394,6 +507,16 @@ export interface MTFSResult {
   s114Reasons: string[];
   treasuryBreaches: string[];
   mrpCharges: [number, number, number, number, number];
+  reconciliationRows: ReconciliationRow[];
+}
+
+export interface ReconciliationRow {
+  field: string;
+  sourceValue: number | null;
+  modelValue: number;
+  variance: number | null;
+  variancePct: number | null;
+  status: 'matched' | 'variance' | 'missing_source' | 'unmapped';
 }
 
 export interface RiskFactor {

@@ -148,7 +148,7 @@ export function Sidebar() {
     const makeFunding = (key: keyof Assumptions['funding'], delta: number) =>
       getDeltaLabel({ ...assumptions, funding: { ...assumptions.funding, [key]: assumptions.funding[key] + delta } });
     const makeExpenditure = (key: keyof Assumptions['expenditure'], delta: number) =>
-      getDeltaLabel({ ...assumptions, expenditure: { ...assumptions.expenditure, [key]: assumptions.expenditure[key] + delta } });
+      getDeltaLabel({ ...assumptions, expenditure: { ...assumptions.expenditure, [key]: Number(assumptions.expenditure[key]) + delta } });
     const makePolicy = (key: keyof Assumptions['policy'], value: number | boolean) =>
       getDeltaLabel({ ...assumptions, policy: { ...assumptions.policy, [key]: value } });
     const makeAdvanced = (key: keyof Assumptions['advanced'], value: number | boolean) =>
@@ -243,7 +243,7 @@ export function Sidebar() {
 
         <div className="mx-3 h-px bg-[rgba(99,179,237,0.06)] mb-2" />
 
-        <Section title="Funding" icon={<DollarSign size={13} />} accent="#3b82f6" tooltip="Core recurring income assumptions across council tax, business rates, grants and charges.">
+        <Section title="Council Tax" icon={<DollarSign size={13} />} accent="#3b82f6" tooltip="Council tax growth assumptions.">
           <SliderControl
             label="Council Tax Increase"
             value={assumptions.funding.councilTaxIncrease}
@@ -253,6 +253,9 @@ export function Sidebar() {
             impactTone={impact.councilTaxIncrease.tone}
             onChange={(v) => updateFunding('councilTaxIncrease', v)}
           />
+        </Section>
+
+        <Section title="Business Rates" icon={<DollarSign size={13} />} accent="#3b82f6" tooltip="Business rates growth assumptions.">
           <SliderControl
             label="Business Rates Growth"
             value={assumptions.funding.businessRatesGrowth}
@@ -262,6 +265,9 @@ export function Sidebar() {
             impactTone={impact.businessRatesGrowth.tone}
             onChange={(v) => updateFunding('businessRatesGrowth', v)}
           />
+        </Section>
+
+        <Section title="Grants" icon={<DollarSign size={13} />} accent="#3b82f6" tooltip="Core grant movement assumptions.">
           <SliderControl
             label="Grant Variation"
             value={assumptions.funding.grantVariation}
@@ -272,6 +278,9 @@ export function Sidebar() {
             impactTone={impact.grantVariation.tone}
             onChange={(v) => updateFunding('grantVariation', v)}
           />
+        </Section>
+
+        <Section title="Other Funding" icon={<DollarSign size={13} />} accent="#3b82f6" tooltip="Fees and charges growth assumptions.">
           <SliderControl
             label="Fees & Charges Elasticity"
             value={assumptions.funding.feesChargesElasticity}

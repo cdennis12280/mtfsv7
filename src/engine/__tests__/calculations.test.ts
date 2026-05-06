@@ -94,6 +94,147 @@ describe('calculation engine', () => {
 
     expect(boosted.councilTaxEquivalent).toBeLessThan(base.councilTaxEquivalent);
   });
+
+  it('contract inflation applies only from effective year', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.contractIndexationTracker.enabled = true;
+    baseline.contractIndexationTracker.contracts = [
+      {
+        id: 'ct-1',
+        name: 'Delayed Contract',
+        value: 1000,
+        clause: 'cpi',
+        bespokeRate: 0,
+        effectiveFromYear: 3,
+        reviewMonth: 4,
+        upliftMethod: 'fixed',
+        fixedRate: 5,
+        customRate: 0,
+        phaseInMonths: 0,
+      },
+    ];
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), baseline, []);
+    expect(result.years[0].contractIndexationCost).toBe(0);
+    expect(result.years[1].contractIndexationCost).toBe(0);
+    expect(result.years[2].contractIndexationCost).toBeGreaterThan(0);
+  });
+
+  it('contract phase-in reduces first-year uplift vs full application', () => {
+    const base = clone(DEFAULT_BASELINE);
+    base.contractIndexationTracker.enabled = true;
+
+    const phased = clone(base);
+    phased.contractIndexationTracker.contracts = [
+      {
+        id: 'ct-phased',
+        name: 'Phased Contract',
+        value: 1000,
+        clause: 'cpi',
+        bespokeRate: 0,
+        effectiveFromYear: 1,
+        reviewMonth: 10,
+        upliftMethod: 'fixed',
+        fixedRate: 6,
+        customRate: 0,
+        phaseInMonths: 6,
+      },
+    ];
+    const full = clone(base);
+    full.contractIndexationTracker.contracts = [
+      {
+        id: 'ct-full',
+        name: 'Full Contract',
+        value: 1000,
+        clause: 'cpi',
+        bespokeRate: 0,
+        effectiveFromYear: 1,
+        reviewMonth: 1,
+        upliftMethod: 'fixed',
+        fixedRate: 6,
+        customRate: 0,
+        phaseInMonths: 0,
+      },
+    ];
+
+    const phasedResult = runCalculations(clone(DEFAULT_ASSUMPTIONS), phased, []);
+    const fullResult = runCalculations(clone(DEFAULT_ASSUMPTIONS), full, []);
+    expect(phasedResult.years[0].contractIndexationCost).toBeGreaterThan(0);
+    expect(phasedResult.years[0].contractIndexationCost).toBeLessThan(fullResult.years[0].contractIndexationCost);
+  });
+
+  it('one-off growth proposals do not worsen structural gap like recurring proposals', () => {
+    const recurring = clone(DEFAULT_BASELINE);
+    recurring.councilTax = 0;
+    recurring.businessRates = 0;
+    recurring.coreGrants = 0;
+    recurring.feesAndCharges = 0;
+    recurring.growthProposals = [
+      {
+        id: 'gp-rec',
+        name: 'Recurring growth',
+        service: 'ASC',
+        owner: 'Director',
+        value: 5000,
+        deliveryYear: 1,
+        isRecurring: true,
+        confidence: 100,
+        yearlyPhasing: [100, 100, 100, 100, 100],
+        notes: '',
+      },
+    ];
+    const oneOff = clone(recurring);
+    oneOff.growthProposals[0].id = 'gp-one';
+    oneOff.growthProposals[0].isRecurring = false;
+    oneOff.growthProposals[0].yearlyPhasing = [100, 0, 0, 0, 0];
+
+    const recurringResult = runCalculations(clone(DEFAULT_ASSUMPTIONS), recurring, []);
+    const oneOffResult = runCalculations(clone(DEFAULT_ASSUMPTIONS), oneOff, []);
+    expect(recurringResult.years[4].structuralGap).toBeGreaterThan(oneOffResult.years[4].structuralGap);
+    expect(oneOffResult.years[1].growthProposalsImpact).toBe(0);
+  });
+
+  it('manual adjustments apply only to selected year', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.manualAdjustments = [{ id: 'adj-1', service: 'Corporate', year: 3, amount: 500, reason: 'Timing adjustment' }];
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), baseline, []);
+    expect(result.years[0].manualAdjustmentsImpact).toBe(0);
+    expect(result.years[1].manualAdjustmentsImpact).toBe(0);
+    expect(result.years[2].manualAdjustmentsImpact).toBeGreaterThan(0);
+    expect(result.years[3].manualAdjustmentsImpact).toBe(0);
+  });
+
+  it('funding bridge deltas reconcile modelled and baseline funding by stream', () => {
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), clone(DEFAULT_BASELINE), []);
+    const y1 = result.years[0];
+    expect(y1.fundingBridge.modelled.councilTax - y1.fundingBridge.baseline.councilTax).toBeCloseTo(y1.fundingBridge.deltas.councilTax, 6);
+    expect(y1.fundingBridge.modelled.businessRates - y1.fundingBridge.baseline.businessRates).toBeCloseTo(y1.fundingBridge.deltas.businessRates, 6);
+    expect(y1.fundingBridge.modelled.grants - y1.fundingBridge.baseline.grants).toBeCloseTo(y1.fundingBridge.deltas.grants, 6);
+    expect(y1.fundingBridge.modelled.otherFunding - y1.fundingBridge.baseline.otherFunding).toBeCloseTo(y1.fundingBridge.deltas.otherFunding, 6);
+  });
+
+  it('pay group sensitivity increases pay pressure for matching workforce groups', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.workforceModel.enabled = true;
+    baseline.workforceModel.mode = 'workforce_posts';
+    baseline.workforceModel.posts = [
+      {
+        id: 'wf-1',
+        postId: 'POST-1',
+        service: 'Corporate',
+        fundingSource: 'general_fund',
+        fte: 10,
+        annualCost: 50000,
+        payAssumptionGroup: 'teachers',
+      },
+    ];
+    const baseA = clone(DEFAULT_ASSUMPTIONS);
+    const stressed = clone(DEFAULT_ASSUMPTIONS);
+    stressed.expenditure.payGroupSensitivity.teachers += 2;
+    const baseResult = runCalculations(baseA, baseline, []);
+    const stressedResult = runCalculations(stressed, baseline, []);
+    expect(stressedResult.years[0].generalFundPayPressure).toBeGreaterThan(baseResult.years[0].generalFundPayPressure);
+    expect(stressedResult.years[0].payInflationImpact).toBeGreaterThan(baseResult.years[0].payInflationImpact);
+  });
 });
 
 describe('baseline csv parser', () => {

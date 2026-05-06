@@ -17,6 +17,11 @@ import type {
   IncomeGenerationLine,
   ModelSnapshot,
   PeerBenchmarkConfig,
+  WorkforcePost,
+  PayModelMode,
+  GrowthProposal,
+  ManualAdjustment,
+  ImportMappingProfile,
 } from '../types/financial';
 import {
   DEFAULT_ASSUMPTIONS,
@@ -51,6 +56,8 @@ interface MTFSStore {
   setAssumptions: (a: Assumptions, description?: string) => void;
   updateFunding: (key: keyof Assumptions['funding'], value: number, description?: string) => void;
   updateExpenditure: (key: keyof Assumptions['expenditure'], value: number, description?: string) => void;
+  updatePayAwardByFundingSource: (source: keyof Assumptions['expenditure']['payAwardByFundingSource'], value: number, description?: string) => void;
+  updatePayGroupSensitivity: (group: keyof Assumptions['expenditure']['payGroupSensitivity'], value: number, description?: string) => void;
   updatePolicy: (key: keyof Assumptions['policy'], value: number | boolean, description?: string) => void;
   updateAdvanced: (key: keyof Assumptions['advanced'], value: number | boolean, description?: string) => void;
 
@@ -72,6 +79,11 @@ interface MTFSStore {
   updatePaySpineRow: (id: string, updates: Partial<PaySpineRow>) => void;
   removePaySpineRow: (id: string) => void;
   setPaySpineEnabled: (enabled: boolean) => void;
+  setWorkforceModelEnabled: (enabled: boolean) => void;
+  setWorkforceModelMode: (mode: PayModelMode) => void;
+  addWorkforcePost: (post: WorkforcePost) => void;
+  updateWorkforcePost: (id: string, updates: Partial<WorkforcePost>) => void;
+  removeWorkforcePost: (id: string) => void;
 
   addContractEntry: (entry: ContractIndexationEntry) => void;
   updateContractEntry: (id: string, updates: Partial<ContractIndexationEntry>) => void;
@@ -87,6 +99,17 @@ interface MTFSStore {
   updateIncomeLine: (id: string, updates: Partial<IncomeGenerationLine>) => void;
   removeIncomeLine: (id: string) => void;
   setIncomeWorkbookEnabled: (enabled: boolean) => void;
+  addGrowthProposal: (proposal: GrowthProposal) => void;
+  updateGrowthProposal: (id: string, updates: Partial<GrowthProposal>) => void;
+  removeGrowthProposal: (id: string) => void;
+  addManualAdjustment: (adjustment: ManualAdjustment) => void;
+  updateManualAdjustment: (id: string, updates: Partial<ManualAdjustment>) => void;
+  removeManualAdjustment: (id: string) => void;
+  addImportMappingProfile: (profile: ImportMappingProfile) => void;
+  updateImportMappingProfile: (id: string, updates: Partial<ImportMappingProfile>) => void;
+  removeImportMappingProfile: (id: string) => void;
+  applyOverlayImport: (sourceName: string, mappedValues: Record<string, number>, unmappedFields?: string[]) => void;
+  clearOverlayImports: () => void;
 
   updateTreasuryIndicators: (updates: Partial<BaselineData['treasuryIndicators']>) => void;
   updateMrpCalculator: (updates: Partial<BaselineData['mrpCalculator']>) => void;
@@ -294,6 +317,50 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       };
     }),
 
+  updatePayAwardByFundingSource: (source, value, description) =>
+    set((s) => {
+      const assumptions = {
+        ...s.assumptions,
+        expenditure: {
+          ...s.assumptions.expenditure,
+          payAwardByFundingSource: {
+            ...s.assumptions.expenditure.payAwardByFundingSource,
+            [source]: value,
+          },
+        },
+      };
+      const desc = description ?? `Pay award by source updated: ${String(source)}`;
+      const result = recompute(assumptions, s.baseline, s.savingsProposals);
+      return {
+        assumptions,
+        result,
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, desc)],
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)],
+      };
+    }),
+
+  updatePayGroupSensitivity: (group, value, description) =>
+    set((s) => {
+      const assumptions = {
+        ...s.assumptions,
+        expenditure: {
+          ...s.assumptions.expenditure,
+          payGroupSensitivity: {
+            ...s.assumptions.expenditure.payGroupSensitivity,
+            [group]: value,
+          },
+        },
+      };
+      const desc = description ?? `Pay group sensitivity updated: ${String(group)}`;
+      const result = recompute(assumptions, s.baseline, s.savingsProposals);
+      return {
+        assumptions,
+        result,
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, desc)],
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)],
+      };
+    }),
+
   updatePolicy: (key, value, description) =>
     set((s) => {
       const assumptions = { ...s.assumptions, policy: { ...s.assumptions.policy, [key]: value } };
@@ -475,6 +542,50 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Pay spine ${enabled ? 'enabled' : 'disabled'}`)] };
     }),
 
+  setWorkforceModelEnabled: (enabled) =>
+    set((s) => {
+      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, enabled } };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Workforce model ${enabled ? 'enabled' : 'disabled'}`)] };
+    }),
+
+  setWorkforceModelMode: (mode) =>
+    set((s) => {
+      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, mode } };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Workforce model mode set: ${mode}`)] };
+    }),
+
+  addWorkforcePost: (post) =>
+    set((s) => {
+      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, posts: [...s.baseline.workforceModel.posts, post] } };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Workforce post added')] };
+    }),
+
+  updateWorkforcePost: (id, updates) =>
+    set((s) => {
+      const baseline = {
+        ...s.baseline,
+        workforceModel: {
+          ...s.baseline.workforceModel,
+          posts: s.baseline.workforceModel.posts.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+        },
+      };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Workforce post updated')] };
+    }),
+
+  removeWorkforcePost: (id) =>
+    set((s) => {
+      const baseline = {
+        ...s.baseline,
+        workforceModel: { ...s.baseline.workforceModel, posts: s.baseline.workforceModel.posts.filter((p) => p.id !== id) },
+      };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Workforce post removed')] };
+    }),
+
   addContractEntry: (entry) =>
     set((s) => {
       const baseline = {
@@ -601,6 +712,106 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Income workbook ${enabled ? 'enabled' : 'disabled'}`)] };
     }),
 
+  addGrowthProposal: (proposal) =>
+    set((s) => {
+      const baseline = { ...s.baseline, growthProposals: [...s.baseline.growthProposals, proposal] };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Growth proposal added')] };
+    }),
+
+  updateGrowthProposal: (id, updates) =>
+    set((s) => {
+      const baseline = {
+        ...s.baseline,
+        growthProposals: s.baseline.growthProposals.map((g) => (g.id === id ? { ...g, ...updates } : g)),
+      };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Growth proposal updated')] };
+    }),
+
+  removeGrowthProposal: (id) =>
+    set((s) => {
+      const baseline = { ...s.baseline, growthProposals: s.baseline.growthProposals.filter((g) => g.id !== id) };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Growth proposal removed')] };
+    }),
+
+  addManualAdjustment: (adjustment) =>
+    set((s) => {
+      const baseline = { ...s.baseline, manualAdjustments: [...s.baseline.manualAdjustments, adjustment] };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return {
+        baseline,
+        result,
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, `Manual adjustment added (${adjustment.service} Y${adjustment.year}): ${adjustment.reason}`)],
+      };
+    }),
+
+  updateManualAdjustment: (id, updates) =>
+    set((s) => {
+      const existing = s.baseline.manualAdjustments.find((a) => a.id === id);
+      const baseline = {
+        ...s.baseline,
+        manualAdjustments: s.baseline.manualAdjustments.map((a) => (a.id === id ? { ...a, ...updates } : a)),
+      };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      const next = { ...existing, ...updates };
+      return {
+        baseline,
+        result,
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, `Manual adjustment updated (${next.service} Y${next.year}): ${next.reason}`)],
+      };
+    }),
+
+  removeManualAdjustment: (id) =>
+    set((s) => {
+      const baseline = { ...s.baseline, manualAdjustments: s.baseline.manualAdjustments.filter((a) => a.id !== id) };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Manual adjustment removed')] };
+    }),
+
+  addImportMappingProfile: (profile) =>
+    set((s) => {
+      const baseline = { ...s.baseline, importMappingProfiles: [...s.baseline.importMappingProfiles, profile] };
+      return { baseline };
+    }),
+
+  updateImportMappingProfile: (id, updates) =>
+    set((s) => {
+      const baseline = {
+        ...s.baseline,
+        importMappingProfiles: s.baseline.importMappingProfiles.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+      };
+      return { baseline };
+    }),
+
+  removeImportMappingProfile: (id) =>
+    set((s) => {
+      const baseline = { ...s.baseline, importMappingProfiles: s.baseline.importMappingProfiles.filter((p) => p.id !== id) };
+      return { baseline };
+    }),
+
+  applyOverlayImport: (sourceName, mappedValues, unmappedFields = []) =>
+    set((s) => {
+      const record = {
+        id: `overlay-${Date.now()}`,
+        sourceName,
+        importedAt: new Date().toISOString(),
+        mappedValues,
+        unmappedFields,
+      };
+      const baseline = { ...s.baseline, overlayImports: [record, ...s.baseline.overlayImports] };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Overlay import applied: ${sourceName}`)] };
+    }),
+
+  clearOverlayImports: () =>
+    set((s) => {
+      const baseline = { ...s.baseline, overlayImports: [] };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Overlay imports cleared')] };
+    }),
+
   updateTreasuryIndicators: (updates) =>
     set((s) => {
       const baseline = { ...s.baseline, treasuryIndicators: { ...s.baseline.treasuryIndicators, ...updates } };
@@ -619,7 +830,18 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     set((s) => {
       let assumptions = { ...s.assumptions };
       if (name === 'pay_settlement_plus2' || name === 'worst_case') {
-        assumptions = { ...assumptions, expenditure: { ...assumptions.expenditure, payAward: assumptions.expenditure.payAward + 2 } };
+        assumptions = {
+          ...assumptions,
+          expenditure: {
+            ...assumptions.expenditure,
+            payAward: assumptions.expenditure.payAward + 2,
+            payAwardByFundingSource: {
+              general_fund: assumptions.expenditure.payAwardByFundingSource.general_fund + 2,
+              grant: assumptions.expenditure.payAwardByFundingSource.grant + 2,
+              other: assumptions.expenditure.payAwardByFundingSource.other + 2,
+            },
+          },
+        };
       }
       if (name === 'asc_demand_shock' || name === 'worst_case') {
         assumptions = { ...assumptions, expenditure: { ...assumptions.expenditure, ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 15 } };
@@ -885,13 +1107,29 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     const assumptions: Assumptions = preset === 'optimistic'
       ? {
         funding: { councilTaxIncrease: 4.99, businessRatesGrowth: 3.0, grantVariation: 1.0, feesChargesElasticity: 4.0 },
-        expenditure: { payAward: 2.5, nonPayInflation: 2.0, ascDemandGrowth: 3.5, cscDemandGrowth: 3.0, savingsDeliveryRisk: 95 },
+        expenditure: {
+          payAward: 2.5,
+          nonPayInflation: 2.0,
+          ascDemandGrowth: 3.5,
+          cscDemandGrowth: 3.0,
+          savingsDeliveryRisk: 95,
+          payAwardByFundingSource: { general_fund: 2.5, grant: 2.5, other: 2.5 },
+          payGroupSensitivity: { default: 0, teachers: 0, njc: 0, senior: 0, other: 0 },
+        },
         policy: { ...s.assumptions.policy, annualSavingsTarget: 3_000 },
         advanced: s.assumptions.advanced,
       }
       : {
         funding: { councilTaxIncrease: 2.99, businessRatesGrowth: 0.5, grantVariation: -4.0, feesChargesElasticity: 0.5 },
-        expenditure: { payAward: 5.0, nonPayInflation: 5.0, ascDemandGrowth: 8.0, cscDemandGrowth: 6.5, savingsDeliveryRisk: 65 },
+        expenditure: {
+          payAward: 5.0,
+          nonPayInflation: 5.0,
+          ascDemandGrowth: 8.0,
+          cscDemandGrowth: 6.5,
+          savingsDeliveryRisk: 65,
+          payAwardByFundingSource: { general_fund: 5.0, grant: 5.0, other: 5.0 },
+          payGroupSensitivity: { default: 0, teachers: 0, njc: 0, senior: 0, other: 0 },
+        },
         policy: { ...s.assumptions.policy, annualSavingsTarget: 6_000 },
         advanced: s.assumptions.advanced,
       };

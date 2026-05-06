@@ -107,6 +107,15 @@ export function TechnicalDetail() {
     { label: 'Total Closing Reserves', isTotal: true, values: years.map((y) => y.totalClosingReserves), colorFn: (v: number) => v < 8000 ? '#ef4444' : '#3b82f6' },
   ];
 
+  const fundingBridgeRows = [
+    { label: 'Council Tax Baseline', values: years.map((y) => y.fundingBridge.baseline.councilTax) },
+    { label: 'Council Tax Modelled', values: years.map((y) => y.fundingBridge.modelled.councilTax), colorFn: () => '#3b82f6' },
+    { label: 'Council Tax Delta', values: years.map((y) => y.fundingBridge.deltas.councilTax), colorFn: (v: number) => v >= 0 ? '#10b981' : '#ef4444' },
+    { label: 'Business Rates Delta', values: years.map((y) => y.fundingBridge.deltas.businessRates), colorFn: (v: number) => v >= 0 ? '#10b981' : '#ef4444' },
+    { label: 'Grants Delta', values: years.map((y) => y.fundingBridge.deltas.grants), colorFn: (v: number) => v >= 0 ? '#10b981' : '#ef4444' },
+    { label: 'Other Funding Delta', values: years.map((y) => y.fundingBridge.deltas.otherFunding), colorFn: (v: number) => v >= 0 ? '#10b981' : '#ef4444' },
+  ];
+
   return (
     <div className="space-y-4">
       <Card>
@@ -124,6 +133,7 @@ export function TechnicalDetail() {
           </div>
 
           <TableSection title="Funding (£000s)" rows={fundingRows} years={yearLabels} />
+          <TableSection title="Funding Bridge (Baseline to Modelled)" rows={fundingBridgeRows} years={yearLabels} />
           <TableSection title="Expenditure (£000s)" rows={expenditureRows} years={yearLabels} />
           <TableSection title="Budget Gap Analysis (£000s)" rows={gapRows} years={yearLabels} />
           <TableSection title="Reserves Movement (£000s)" rows={reservesRows} years={yearLabels} />

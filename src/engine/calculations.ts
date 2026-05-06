@@ -79,6 +79,11 @@ export const DEFAULT_BASELINE: BaselineData = {
     enabled: false,
     rows: [],
   },
+  workforceModel: {
+    enabled: false,
+    mode: 'pay_spine',
+    posts: [],
+  },
   contractIndexationTracker: {
     enabled: false,
     contracts: [],
@@ -91,6 +96,10 @@ export const DEFAULT_BASELINE: BaselineData = {
     enabled: false,
     lines: [],
   },
+  growthProposals: [],
+  manualAdjustments: [],
+  importMappingProfiles: [],
+  overlayImports: [],
   reservesAdequacyMethodology: {
     method: 'fixed',
     fixedMinimum: 8_000,
@@ -124,6 +133,18 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
     ascDemandGrowth: 5.5,
     cscDemandGrowth: 4.0,
     savingsDeliveryRisk: 85,
+    payAwardByFundingSource: {
+      general_fund: 3.5,
+      grant: 3.5,
+      other: 3.5,
+    },
+    payGroupSensitivity: {
+      default: 0,
+      teachers: 0,
+      njc: 0,
+      senior: 0,
+      other: 0,
+    },
   },
   policy: {
     annualSavingsTarget: 0,
@@ -400,6 +421,81 @@ function resolveContractRate(
   return assumptions.expenditure.nonPayInflation;
 }
 
+function resolveContractUpliftRate(
+  method: 'cpi' | 'rpi' | 'fixed' | 'custom',
+  assumptions: Assumptions,
+  fixedRate: number,
+  customRate: number
+): number {
+  if (method === 'fixed') return fixedRate;
+  if (method === 'custom') return customRate;
+  if (method === 'rpi') return assumptions.expenditure.nonPayInflation + 1;
+  return assumptions.expenditure.nonPayInflation;
+}
+
+function resolveContractEffectiveFactor(
+  year: number,
+  effectiveFromYear: number,
+  reviewMonth: number,
+  phaseInMonths: number
+): number {
+  if (year < effectiveFromYear) return 0;
+  const monthFactor = Math.max(0, Math.min(1, (13 - reviewMonth) / 12));
+  const phaseFactor = phaseInMonths <= 0 ? 1 : Math.max(0, Math.min(1, (12 - Math.min(12, phaseInMonths)) / 12));
+  if (year === effectiveFromYear) return monthFactor * phaseFactor;
+  return 1;
+}
+
+function buildReconciliationRows(baseline: BaselineData, results: YearResult[]): MTFSResult['reconciliationRows'] {
+  const year1 = results[0];
+  if (!year1) return [];
+  const sourceMap: Record<string, number | null> = {};
+  for (const overlay of baseline.overlayImports) {
+    Object.entries(overlay.mappedValues).forEach(([field, value]) => {
+      sourceMap[field] = value;
+    });
+    overlay.unmappedFields.forEach((field) => {
+      if (!(field in sourceMap)) sourceMap[field] = null;
+    });
+  }
+  const modelMap: Record<string, number> = {
+    councilTax: year1.councilTax,
+    businessRates: year1.businessRates,
+    coreGrants: year1.coreGrants,
+    feesAndCharges: year1.feesAndCharges,
+    pay: year1.payBase + year1.payInflationImpact,
+    nonPay: year1.nonPayBase + year1.nonPayInflationImpact,
+    contractIndexationCost: year1.contractIndexationCost,
+    growthProposalsImpact: year1.growthProposalsImpact,
+  };
+
+  const fields = new Set([...Object.keys(modelMap), ...Object.keys(sourceMap)]);
+  return Array.from(fields).map((field) => {
+    const modelValue = modelMap[field] ?? 0;
+    const sourceValue = field in sourceMap ? sourceMap[field] : null;
+    if (sourceValue === null) {
+      return {
+        field,
+        sourceValue,
+        modelValue,
+        variance: null,
+        variancePct: null,
+        status: field in sourceMap ? 'unmapped' : 'missing_source',
+      };
+    }
+    const variance = modelValue - sourceValue;
+    const variancePct = sourceValue === 0 ? null : (variance / sourceValue) * 100;
+    return {
+      field,
+      sourceValue,
+      modelValue,
+      variance,
+      variancePct,
+      status: Math.abs(variance) < 0.001 ? 'matched' : 'variance',
+    };
+  });
+}
+
 function computeMrpChargeForYear(baseline: BaselineData, year: number): number {
   if (!baseline.mrpCalculator.enabled) return 0;
   const cfg = baseline.mrpCalculator;
@@ -509,10 +605,41 @@ export function runCalculations(
     }
     const totalFunding = councilTax + businessRates + coreGrants + feesAndCharges;
 
-    const payBase = baseline.paySpineConfig.enabled
-      ? baseline.paySpineConfig.rows.reduce((sum, row) => sum + ((row.fte * row.spinePointCost) / 1000), 0) * deflator(y)
-      : baseline.pay * deflator(y);
-    const payInflationImpact = payBase * (Math.pow(1 + assumptions.expenditure.payAward / 100, y) - 1);
+    const payFromSpine =
+      baseline.paySpineConfig.enabled
+        ? baseline.paySpineConfig.rows.reduce((sum, row) => sum + ((row.fte * row.spinePointCost) / 1000), 0) * deflator(y)
+        : 0;
+    const payFromWorkforce =
+      baseline.workforceModel.enabled
+        ? baseline.workforceModel.posts.reduce((sum, post) => sum + ((post.fte * post.annualCost) / 1000), 0) * deflator(y)
+        : 0;
+    const payBase =
+      baseline.workforceModel.mode === 'hybrid'
+        ? payFromSpine + payFromWorkforce
+        : baseline.workforceModel.mode === 'workforce_posts'
+          ? (payFromWorkforce || baseline.pay * deflator(y))
+          : (payFromSpine || baseline.pay * deflator(y));
+
+    const workforcePayPressureBySource = baseline.workforceModel.enabled
+      ? baseline.workforceModel.posts.reduce((acc, post) => {
+        const base = ((post.fte * post.annualCost) / 1000) * deflator(y);
+        const sourceRate = assumptions.expenditure.payAwardByFundingSource[post.fundingSource];
+        const groupAdj = assumptions.expenditure.payGroupSensitivity[post.payAssumptionGroup] ?? 0;
+        const effectiveRate = sourceRate + groupAdj;
+        acc[post.fundingSource] += base * (Math.pow(1 + effectiveRate / 100, y) - 1);
+        return acc;
+      }, { general_fund: 0, grant: 0, other: 0 })
+      : { general_fund: 0, grant: 0, other: 0 };
+    const generalFundPayPressure = baseline.workforceModel.enabled
+      ? workforcePayPressureBySource.general_fund
+      : payBase * (Math.pow(1 + assumptions.expenditure.payAward / 100, y) - 1);
+    const grantFundedPayPressure = baseline.workforceModel.enabled
+      ? workforcePayPressureBySource.grant
+      : 0;
+    const otherFundedPayPressure = baseline.workforceModel.enabled
+      ? workforcePayPressureBySource.other
+      : 0;
+    const payInflationImpact = generalFundPayPressure + grantFundedPayPressure + otherFundedPayPressure;
     const nonPayBase = baseline.nonPay * deflator(y);
     const nonPayInflationImpact = nonPayBase * (Math.pow(1 + assumptions.expenditure.nonPayInflation / 100, y) - 1);
 
@@ -527,10 +654,22 @@ export function runCalculations(
 
     const cscPressure = baseline.cscDemandLed * Math.pow(1 + assumptions.expenditure.cscDemandGrowth / 100, y) * deflator(y);
     const otherServiceExp = baseline.otherServiceExp * deflator(y);
+    const contractBreakdown: YearResult['contractIndexationBreakdown'] = [];
     const contractIndexationCost = baseline.contractIndexationTracker.enabled
       ? baseline.contractIndexationTracker.contracts.reduce((sum, c) => {
-        const rate = resolveContractRate(c.clause, assumptions, c.bespokeRate);
-        return sum + (c.value * Math.pow(1 + rate / 100, y));
+        const upliftMethod = c.upliftMethod ?? (c.clause === 'bespoke' ? 'custom' : c.clause === 'nmw' ? 'fixed' : c.clause);
+        const rate = resolveContractUpliftRate(upliftMethod, assumptions, c.fixedRate ?? assumptions.expenditure.payAward, c.customRate ?? c.bespokeRate);
+        const effectiveFactor = resolveContractEffectiveFactor(y, c.effectiveFromYear ?? 1, c.reviewMonth ?? 4, c.phaseInMonths ?? 0);
+        const upliftCost = c.value * (Math.pow(1 + rate / 100, y) - 1) * effectiveFactor;
+        contractBreakdown.push({
+          contractId: c.id,
+          name: c.name,
+          year: y,
+          method: upliftMethod,
+          effectiveFactor,
+          upliftCost,
+        });
+        return sum + upliftCost;
       }, 0) * deflator(y)
       : 0;
 
@@ -567,9 +706,23 @@ export function runCalculations(
       }, 0) * deflator(y)
       : 0;
 
+    let oneOffGrowthImpact = 0;
+    const growthProposalsImpact = baseline.growthProposals.reduce((sum, gp) => {
+      if (y < gp.deliveryYear) return sum;
+      const phase = Math.max(0, (gp.yearlyPhasing[y - 1] ?? 0) / 100);
+      const confidence = Math.max(0, Math.min(1, gp.confidence / 100));
+      const impact = gp.value * phase * confidence;
+      if (!gp.isRecurring) oneOffGrowthImpact += impact;
+      return sum + impact;
+    }, 0) * deflator(y);
+    oneOffGrowthImpact *= deflator(y);
+    const manualAdjustmentsImpact = baseline.manualAdjustments
+      .filter((adj) => adj.year === y)
+      .reduce((sum, adj) => sum + adj.amount, 0) * deflator(y);
+
     const coreExpenditure = payBase + payInflationImpact + nonPayBase + nonPayInflationImpact +
       ascPressure + cscPressure + otherServiceExp + contractIndexationCost + capitalFinancingCost + mrpCharge +
-      reservesRebuildContribution + investToSaveNetImpact;
+      reservesRebuildContribution + investToSaveNetImpact + growthProposalsImpact + manualAdjustmentsImpact;
     const grossExpenditureBeforeSavings = coreExpenditure + customLinesTotalExpenditure;
 
     let deliveredSavings = 0;
@@ -603,7 +756,7 @@ export function runCalculations(
     const rawGap = totalExpenditure - totalFunding;
     const recurringCustomLines = customLineResults.filter((l) => l.isRecurring).reduce((s, l) => s + l.inflatedValue, 0);
     const nonRecurringCustomLines = customLinesTotalExpenditure - recurringCustomLines;
-    const structuralGap = rawGap + oneOffDeliveredSavings - nonRecurringCustomLines;
+    const structuralGap = rawGap + oneOffDeliveredSavings - nonRecurringCustomLines - oneOffGrowthImpact;
     // Planned reserves use is an explicit annual mitigation amount.
     // 0 means no planned reserves drawdown.
     const plannedReservesUse = Math.max(0, assumptions.policy.reservesUsage);
@@ -683,6 +836,9 @@ export function runCalculations(
       totalFunding,
       payBase,
       payInflationImpact,
+      generalFundPayPressure,
+      grantFundedPayPressure,
+      otherFundedPayPressure,
       nonPayBase,
       nonPayInflationImpact,
       ascPressure,
@@ -691,7 +847,10 @@ export function runCalculations(
       capitalFinancingCost,
       reservesRebuildContribution,
       contractIndexationCost,
+      contractIndexationBreakdown: contractBreakdown,
       investToSaveNetImpact,
+      growthProposalsImpact,
+      manualAdjustmentsImpact,
       incomeGenerationIncome,
       mrpCharge,
       customLineResults,
@@ -715,6 +874,26 @@ export function runCalculations(
       reservesBelowThreshold,
       reservesExhausted,
       savingsProposalResults,
+      fundingBridge: {
+        baseline: {
+          councilTax: baseline.councilTax,
+          businessRates: baseline.businessRates,
+          grants: baseline.coreGrants,
+          otherFunding: baseline.feesAndCharges,
+        },
+        modelled: {
+          councilTax,
+          businessRates,
+          grants: coreGrants,
+          otherFunding: feesAndCharges,
+        },
+        deltas: {
+          councilTax: councilTax - baseline.councilTax,
+          businessRates: businessRates - baseline.businessRates,
+          grants: coreGrants - baseline.coreGrants,
+          otherFunding: feesAndCharges - baseline.feesAndCharges,
+        },
+      },
       structuralDeficit,
       overReliantOnReserves,
       unrealisticSavings,
@@ -788,6 +967,7 @@ export function runCalculations(
     s114Reasons: s114.reasons,
     treasuryBreaches,
     mrpCharges,
+    reconciliationRows: buildReconciliationRows(baseline, results),
   };
 }
 
@@ -1061,6 +1241,18 @@ export function computeMonteCarlo(
         ascDemandGrowth: clamp(assumptions.expenditure.ascDemandGrowth + gaussian(0, 1.5), 0, 20),
         cscDemandGrowth: clamp(assumptions.expenditure.cscDemandGrowth + gaussian(0, 1.3), 0, 20),
         savingsDeliveryRisk: clamp(assumptions.expenditure.savingsDeliveryRisk + gaussian(0, 8), 20, 100),
+        payAwardByFundingSource: {
+          general_fund: clamp(assumptions.expenditure.payAwardByFundingSource.general_fund + gaussian(0, 1.0), 0, 12),
+          grant: clamp(assumptions.expenditure.payAwardByFundingSource.grant + gaussian(0, 1.0), 0, 12),
+          other: clamp(assumptions.expenditure.payAwardByFundingSource.other + gaussian(0, 1.0), 0, 12),
+        },
+        payGroupSensitivity: {
+          default: clamp(assumptions.expenditure.payGroupSensitivity.default + gaussian(0, 0.5), -5, 5),
+          teachers: clamp(assumptions.expenditure.payGroupSensitivity.teachers + gaussian(0, 0.5), -5, 5),
+          njc: clamp(assumptions.expenditure.payGroupSensitivity.njc + gaussian(0, 0.5), -5, 5),
+          senior: clamp(assumptions.expenditure.payGroupSensitivity.senior + gaussian(0, 0.5), -5, 5),
+          other: clamp(assumptions.expenditure.payGroupSensitivity.other + gaussian(0, 0.5), -5, 5),
+        },
       },
       policy: assumptions.policy,
       advanced: assumptions.advanced,
