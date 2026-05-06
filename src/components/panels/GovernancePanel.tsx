@@ -2,11 +2,7 @@ import React from 'react';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { Database, BookOpen, AlertCircle, Download, FileText } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
-import {
-  exportCommitteeReportPdf,
-  exportOnePageMemberBriefPdf,
-  exportPremiumBriefPdf,
-} from '../../utils/governancePdf';
+import { exportCommitteeReportPdf, exportOnePageMemberBriefPdf } from '../../utils/governancePdf';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -16,6 +12,8 @@ function fmtK(v: number) {
 
 export function GovernancePanel() {
   const { result, assumptions, baseline, savingsProposals, authorityConfig } = useMTFSStore();
+  const fmtProfile = (p: { y1: number; y2: number; y3: number; y4: number; y5: number }, suffix = '%') =>
+    `${p.y1.toFixed(1)}${suffix} / ${p.y2.toFixed(1)}${suffix} / ${p.y3.toFixed(1)}${suffix} / ${p.y4.toFixed(1)}${suffix} / ${p.y5.toFixed(1)}${suffix}`;
 
   const handleFullExport = () => {
     exportCommitteeReportPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
@@ -48,41 +46,30 @@ export function GovernancePanel() {
     exportOnePageMemberBriefPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
   };
 
-  const handlePremiumMarkdownExport = () => {
-    exportPremiumBriefPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
-  };
-
   return (
     <div className="space-y-4">
       {/* Export actions */}
       <div className="flex items-center gap-3">
         <button
-          onClick={handleFullExport}
+          onClick={handleOnePageBriefExport}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] transition-colors"
         >
           <FileText size={13} />
-          Export Committee Report PDF
+          Member Brief
+        </button>
+        <button
+          onClick={handleFullExport}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[#f59e0b] text-[11px] font-semibold hover:bg-[rgba(245,158,11,0.18)] transition-colors"
+        >
+          <FileText size={13} />
+          S151 Pack
         </button>
         <button
           onClick={handleCsvExport}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)] text-[#10b981] text-[11px] font-semibold hover:bg-[rgba(16,185,129,0.15)] transition-colors"
         >
           <Download size={13} />
-          Export Data CSV
-        </button>
-        <button
-          onClick={handleOnePageBriefExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[#f59e0b] text-[11px] font-semibold hover:bg-[rgba(245,158,11,0.18)] transition-colors"
-        >
-          <FileText size={13} />
-          Export One-Page Member Brief PDF
-        </button>
-        <button
-          onClick={handlePremiumMarkdownExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(139,92,246,0.14)] border border-[rgba(139,92,246,0.36)] text-[#a78bfa] text-[11px] font-semibold hover:bg-[rgba(139,92,246,0.22)] transition-colors"
-        >
-          <FileText size={13} />
-          Export Premium Brief PDF
+          Data CSV
         </button>
         <span className="text-[10px] text-[#4a6080]">
           Report branded for: <span className="text-[#8ca0c0] font-semibold">{authorityConfig.authorityName}</span>
@@ -171,16 +158,16 @@ export function GovernancePanel() {
         </CardHeader>
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[10px]">
           {[
-            ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}% p.a.`],
-            ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(1)}% p.a.`],
-            ['Grant Variation', `${assumptions.funding.grantVariation > 0 ? '+' : ''}${assumptions.funding.grantVariation.toFixed(1)}% p.a.`],
-            ['Fees & Charges Growth', `${assumptions.funding.feesChargesElasticity.toFixed(1)}% p.a.`],
-            ['Pay Award', `${assumptions.expenditure.payAward.toFixed(1)}% p.a.`],
-            ['Non-Pay Inflation', `${assumptions.expenditure.nonPayInflation.toFixed(1)}% p.a.`],
-            ['ASC Demand Growth', `${assumptions.expenditure.ascDemandGrowth.toFixed(1)}% p.a.`],
-            ['CSC Demand Growth', `${assumptions.expenditure.cscDemandGrowth.toFixed(1)}% p.a.`],
-            ['Savings Delivery Risk', `${assumptions.expenditure.savingsDeliveryRisk.toFixed(0)}% achievement`],
-            ['Policy Savings Target', fmtK(assumptions.policy.annualSavingsTarget)],
+            ['Council Tax Increase (Y1-Y5)', fmtProfile(assumptions.funding.councilTaxIncrease)],
+            ['Business Rates Growth (Y1-Y5)', fmtProfile(assumptions.funding.businessRatesGrowth)],
+            ['Grant Variation (Y1-Y5)', fmtProfile(assumptions.funding.grantVariation)],
+            ['Fees & Charges Growth (Y1-Y5)', fmtProfile(assumptions.funding.feesChargesElasticity)],
+            ['Pay Award (Y1-Y5)', fmtProfile(assumptions.expenditure.payAward)],
+            ['Non-Pay Inflation (Y1-Y5)', fmtProfile(assumptions.expenditure.nonPayInflation)],
+            ['ASC Demand Growth (Y1-Y5)', fmtProfile(assumptions.expenditure.ascDemandGrowth)],
+            ['CSC Demand Growth (Y1-Y5)', fmtProfile(assumptions.expenditure.cscDemandGrowth)],
+            ['Savings Delivery Risk (Y1-Y5)', fmtProfile(assumptions.expenditure.savingsDeliveryRisk)],
+            ['Policy Savings Target (Y1)', fmtK(assumptions.policy.annualSavingsTarget.y1)],
             ['Savings Proposals', `${savingsProposals.length} entered`],
             ['Named Reserves', `${baseline.namedReserves.length} defined`],
             ['Custom Service Lines', `${baseline.customServiceLines.length} defined`],

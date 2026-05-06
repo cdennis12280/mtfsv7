@@ -10,7 +10,7 @@ interface PanelGuideItem {
 
 const PANEL_GUIDE: PanelGuideItem[] = [
   {
-    name: 'Overview',
+    name: 'Summary',
     purpose: 'Executive summary of the medium-term position with year-by-year RAG narrative and trend charts.',
     keyOutputs: '5-year gap summary, risk score, do-nothing comparison, funding/expenditure trajectories.',
     keyInputs: 'Uses all assumptions, baseline values, savings programme and reserves settings.',
@@ -22,40 +22,28 @@ const PANEL_GUIDE: PanelGuideItem[] = [
     keyInputs: 'Funding lines, cost lines, custom service lines, and baseline configuration controls.',
   },
   {
-    name: 'Gap Analysis',
-    purpose: 'Detailed visual diagnosis of annual budget gaps and primary year-5 gap drivers.',
-    keyOutputs: 'Gross vs net gap by year, reserves impact, major pressure/funding contributors.',
-    keyInputs: 'Directly reflects assumption changes and savings delivery effects.',
-  },
-  {
     name: 'Reserves',
     purpose: 'Two-tab reserves area for aggregate reserves analysis and named reserves schedule management.',
     keyOutputs: 'Reserves depletion path, threshold warnings, earmarked/general reserve position.',
     keyInputs: 'General/earmarked opening balances, threshold, planned usage, named reserve plans.',
   },
   {
-    name: 'Savings Programme',
+    name: 'Savings',
     purpose: 'Programme management for savings proposals including phasing, risk and ownership.',
     keyOutputs: 'Recurring vs one-off delivery profile and contribution to gap closure.',
     keyInputs: 'Proposal value, delivery year, yearly phasing, achievement rate, RAG and owner.',
   },
   {
-    name: 'Risk & Resilience',
+    name: 'Risk',
     purpose: 'Risk posture dashboard including resilience indicators and stress/benchmark overlays.',
     keyOutputs: 'Overall risk score, red/amber/green warnings, resilience signals and simulation context.',
     keyInputs: 'Gap trajectory, reserves adequacy, volatility assumptions, peer benchmark and stress settings.',
   },
   {
-    name: 'High Value',
-    purpose: 'Advanced high-impact modelling modules for tax base, grants, ASC demand, capital and reserves policy.',
-    keyOutputs: 'Refined projections replacing simplified assumptions where enabled.',
-    keyInputs: 'Council tax base config, grant schedule, ASC cohorts, capital financing, reserves methodology.',
-  },
-  {
-    name: 'Enhancement',
-    purpose: 'Optional enhancement modules for workforce, contracts, invest-to-save, income and treasury controls.',
-    keyOutputs: 'Additional pressure/income effects and treasury/MRP indicators.',
-    keyInputs: 'NJC pay spine rows, contract clauses, invest-to-save plans, income lines, treasury settings.',
+    name: 'Drivers',
+    purpose: 'Unified advanced modelling workspace combining assumption-linked modules and technical levers.',
+    keyOutputs: 'Refined projections for workforce, contracts, growth/savings overlays, funding detail and treasury effects.',
+    keyInputs: 'Workforce/pay controls, contract clauses, growth and manual overrides, reserves methodology, treasury/MRP settings.',
   },
   {
     name: 'Scenarios',
@@ -64,28 +52,16 @@ const PANEL_GUIDE: PanelGuideItem[] = [
     keyInputs: 'Current assumptions/baseline/savings/reserves and authority metadata at save time.',
   },
   {
-    name: 'Insights',
-    purpose: 'Narrative insight feed translating model outputs into decision-focused messages.',
-    keyOutputs: 'Critical, warning and contextual insights for officers and elected members.',
-    keyInputs: 'Computed model outputs and risk flags.',
-  },
-  {
-    name: 'Technical Detail',
-    purpose: 'Finance-detail breakdown including year-level components and diagnostics.',
-    keyOutputs: 'Technical line-by-line values supporting auditability and challenge.',
-    keyInputs: 'All model internals for each year and component.',
-  },
-  {
-    name: 'S151 Assurance',
-    purpose: 'Assurance-oriented checks and framing for Section 151 governance scrutiny.',
-    keyOutputs: 'Assurance indicators and statutory-style commentary support.',
-    keyInputs: 'Reserves sustainability, recurring balance, delivery and risk evidence.',
-  },
-  {
     name: 'Governance',
-    purpose: 'Committee/reporting support view for communicating position, actions and risks.',
-    keyOutputs: 'Governance-ready summaries and export-oriented narratives.',
-    keyInputs: 'Whole-model outcome and authority report metadata.',
+    purpose: 'Committee/reporting support view with integrated Section151 assurance and technical drill-down.',
+    keyOutputs: 'Governance exports, assurance commentary, methodology and controls evidence.',
+    keyInputs: 'Whole-model outcomes, authority metadata, assurance indicators.',
+  },
+  {
+    name: 'Help',
+    purpose: 'In-app instruction manual covering workflow, terminology and governance usage.',
+    keyOutputs: 'Operator guidance and onboarding clarity.',
+    keyInputs: 'Reference content only.',
   },
 ];
 
@@ -165,9 +141,9 @@ export function HelpGuide() {
           <div className="space-y-2">
             <p><span className="text-[#f0f4ff] font-semibold">Authority Config:</span> authority name, S151 officer, chief executive, authority type and reporting period for report identity.</p>
             <p><span className="text-[#f0f4ff] font-semibold">Quick Presets:</span> optimistic/pessimistic one-click assumptions for rapid scenario stress.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Funding Sliders:</span> council tax increase, business rates growth, grant variation, fees and charges elasticity.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Expenditure Sliders:</span> pay award, non-pay inflation, ASC demand, CSC demand, savings delivery risk.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Policy Levers:</span> annual savings target, planned reserves usage, social care protection toggle.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Funding Year Grid:</span> council tax, business rates, grants and fees assumptions by Y1–Y5.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Expenditure Year Grid:</span> pay, non-pay, ASC, CSC and savings delivery by Y1–Y5.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Policy Year Grid:</span> annual savings target and planned reserves usage by Y1–Y5, plus social care protection toggle.</p>
             <p><span className="text-[#f0f4ff] font-semibold">Advanced:</span> real-terms toggle and deflator rate.</p>
             <p><span className="text-[#f0f4ff] font-semibold">Accessibility:</span> default, large text, high contrast and dyslexia-friendly presets.</p>
             <p><span className="text-[#f0f4ff] font-semibold">Reset To Defaults:</span> restores the demonstration model setup.</p>

@@ -1,5 +1,6 @@
 import type {
   Assumptions,
+  YearProfile5,
   BaselineData,
   MTFSResult,
   YearResult,
@@ -122,17 +123,17 @@ export const DEFAULT_BASELINE: BaselineData = {
 
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
   funding: {
-    councilTaxIncrease: 4.99,
-    businessRatesGrowth: 2.0,
-    grantVariation: -1.5,
-    feesChargesElasticity: 2.5,
+    councilTaxIncrease: { y1: 4.99, y2: 4.99, y3: 4.99, y4: 4.99, y5: 4.99 },
+    businessRatesGrowth: { y1: 2.0, y2: 2.0, y3: 2.0, y4: 2.0, y5: 2.0 },
+    grantVariation: { y1: -1.5, y2: -1.5, y3: -1.5, y4: -1.5, y5: -1.5 },
+    feesChargesElasticity: { y1: 2.5, y2: 2.5, y3: 2.5, y4: 2.5, y5: 2.5 },
   },
   expenditure: {
-    payAward: 3.5,
-    nonPayInflation: 3.0,
-    ascDemandGrowth: 5.5,
-    cscDemandGrowth: 4.0,
-    savingsDeliveryRisk: 85,
+    payAward: { y1: 3.5, y2: 3.5, y3: 3.5, y4: 3.5, y5: 3.5 },
+    nonPayInflation: { y1: 3.0, y2: 3.0, y3: 3.0, y4: 3.0, y5: 3.0 },
+    ascDemandGrowth: { y1: 5.5, y2: 5.5, y3: 5.5, y4: 5.5, y5: 5.5 },
+    cscDemandGrowth: { y1: 4.0, y2: 4.0, y3: 4.0, y4: 4.0, y5: 4.0 },
+    savingsDeliveryRisk: { y1: 85, y2: 85, y3: 85, y4: 85, y5: 85 },
     payAwardByFundingSource: {
       general_fund: 3.5,
       grant: 3.5,
@@ -147,8 +148,8 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
     },
   },
   policy: {
-    annualSavingsTarget: 0,
-    reservesUsage: 0,
+    annualSavingsTarget: { y1: 0, y2: 0, y3: 0, y4: 0, y5: 0 },
+    reservesUsage: { y1: 0, y2: 0, y3: 0, y4: 0, y5: 0 },
     socialCareProtection: true,
   },
   advanced: {
@@ -171,6 +172,56 @@ export const DEFAULT_AUTHORITY_CONFIG = {
 };
 
 const YEARS = 5;
+
+function toNumberSafe(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function coerceYearProfile(value: unknown, fallback: YearProfile5): YearProfile5 {
+  if (value && typeof value === 'object') {
+    const v = value as Partial<YearProfile5>;
+    return {
+      y1: toNumberSafe(v.y1, fallback.y1),
+      y2: toNumberSafe(v.y2, fallback.y2),
+      y3: toNumberSafe(v.y3, fallback.y3),
+      y4: toNumberSafe(v.y4, fallback.y4),
+      y5: toNumberSafe(v.y5, fallback.y5),
+    };
+  }
+  const scalar = toNumberSafe(value, 0);
+  return { y1: scalar, y2: scalar, y3: scalar, y4: scalar, y5: scalar };
+}
+
+function yearValue(profile: YearProfile5 | number, year: number): number {
+  if (typeof profile === 'number') return profile;
+  const y = Math.max(1, Math.min(5, year));
+  return profile[`y${y}` as keyof YearProfile5];
+}
+
+function compoundFactor(profile: YearProfile5 | number, year: number): number {
+  if (year <= 0) return 1;
+  if (typeof profile === 'number') return Math.pow(1 + profile / 100, year);
+  let factor = 1;
+  for (let i = 1; i <= year; i += 1) {
+    factor *= 1 + yearValue(profile, i) / 100;
+  }
+  return factor;
+}
+
+function bumpProfile(profile: YearProfile5 | number, delta: number): YearProfile5 {
+  if (typeof profile === 'number') {
+    const value = profile + delta;
+    return { y1: value, y2: value, y3: value, y4: value, y5: value };
+  }
+  return {
+    y1: profile.y1 + delta,
+    y2: profile.y2 + delta,
+    y3: profile.y3 + delta,
+    y4: profile.y4 + delta,
+    y5: profile.y5 + delta,
+  };
+}
 
 // ─── CSV Import helper (Item 2) ───────────────────────────────────────────────
 
@@ -310,15 +361,16 @@ export async function parseBaselineSpreadsheet(file: File): Promise<CsvImportRes
 
 function resolveInflationRate(
   line: CustomServiceLine,
-  assumptions: Assumptions
+  assumptions: Assumptions,
+  year: number
 ): number {
   switch (line.inflationDriver) {
-    case 'pay': return assumptions.expenditure.payAward;
-    case 'cpi': return assumptions.expenditure.nonPayInflation;
-    case 'asc-demand': return assumptions.expenditure.ascDemandGrowth;
-    case 'csc-demand': return assumptions.expenditure.cscDemandGrowth;
+    case 'pay': return yearValue(assumptions.expenditure.payAward, year);
+    case 'cpi': return yearValue(assumptions.expenditure.nonPayInflation, year);
+    case 'asc-demand': return yearValue(assumptions.expenditure.ascDemandGrowth, year);
+    case 'csc-demand': return yearValue(assumptions.expenditure.cscDemandGrowth, year);
     case 'manual': return line.manualInflationRate;
-    default: return assumptions.expenditure.nonPayInflation;
+    default: return yearValue(assumptions.expenditure.nonPayInflation, year);
   }
 }
 
@@ -413,24 +465,26 @@ function computeRecommendedMinimumReserves(baseline: BaselineData): number {
 function resolveContractRate(
   clause: 'cpi' | 'rpi' | 'nmw' | 'bespoke',
   assumptions: Assumptions,
-  bespokeRate: number
+  bespokeRate: number,
+  year: number
 ): number {
   if (clause === 'bespoke') return bespokeRate;
-  if (clause === 'nmw') return assumptions.expenditure.payAward;
-  if (clause === 'rpi') return assumptions.expenditure.nonPayInflation + 1;
-  return assumptions.expenditure.nonPayInflation;
+  if (clause === 'nmw') return yearValue(assumptions.expenditure.payAward, year);
+  if (clause === 'rpi') return yearValue(assumptions.expenditure.nonPayInflation, year) + 1;
+  return yearValue(assumptions.expenditure.nonPayInflation, year);
 }
 
 function resolveContractUpliftRate(
   method: 'cpi' | 'rpi' | 'fixed' | 'custom',
   assumptions: Assumptions,
   fixedRate: number,
-  customRate: number
+  customRate: number,
+  year: number
 ): number {
   if (method === 'fixed') return fixedRate;
   if (method === 'custom') return customRate;
-  if (method === 'rpi') return assumptions.expenditure.nonPayInflation + 1;
-  return assumptions.expenditure.nonPayInflation;
+  if (method === 'rpi') return yearValue(assumptions.expenditure.nonPayInflation, year) + 1;
+  return yearValue(assumptions.expenditure.nonPayInflation, year);
 }
 
 function resolveContractEffectiveFactor(
@@ -571,17 +625,29 @@ export function runCalculations(
 
   for (let y = 1; y <= YEARS; y += 1) {
     const label = `${new Date().getFullYear() + y - 1}/${String(new Date().getFullYear() + y).slice(2)}`;
+    const ctGrowthProfile = assumptions.funding.councilTaxIncrease;
+    const brGrowthProfile = assumptions.funding.businessRatesGrowth;
+    const grantProfile = assumptions.funding.grantVariation;
+    const feesProfile = assumptions.funding.feesChargesElasticity;
+    const payProfile = assumptions.expenditure.payAward;
+    const nonPayProfile = assumptions.expenditure.nonPayInflation;
+    const ascProfile = assumptions.expenditure.ascDemandGrowth;
+    const cscProfile = assumptions.expenditure.cscDemandGrowth;
+    const savingsDeliveryProfile = assumptions.expenditure.savingsDeliveryRisk;
+    const savingsTargetProfile = assumptions.policy.annualSavingsTarget;
+    const reservesUsageProfile = assumptions.policy.reservesUsage;
+
     const taxCfg = baseline.councilTaxBaseConfig;
     const ctIncreasePct = taxCfg.enabled
       ? taxCfg.corePreceptPct + taxCfg.ascPreceptPct
-      : assumptions.funding.councilTaxIncrease;
+      : yearValue(ctGrowthProfile, y);
 
     const councilTaxBaseYield = taxCfg.enabled
       ? ((taxCfg.bandDEquivalentDwellings * taxCfg.bandDCharge * (taxCfg.collectionRate / 100)) / 1000) + taxCfg.parishPrecepts
       : baseline.councilTax;
-    const councilTax = councilTaxBaseYield * Math.pow(1 + ctIncreasePct / 100, y) * deflator(y);
+    const councilTax = councilTaxBaseYield * (taxCfg.enabled ? Math.pow(1 + ctIncreasePct / 100, y) : compoundFactor(ctGrowthProfile, y)) * deflator(y);
 
-    const businessRates = baseline.businessRates * Math.pow(1 + assumptions.funding.businessRatesGrowth / 100, y) * deflator(y);
+    const businessRates = baseline.businessRates * compoundFactor(brGrowthProfile, y) * deflator(y);
     const incomeGenerationIncome = baseline.incomeGenerationWorkbook.enabled
       ? baseline.incomeGenerationWorkbook.lines.reduce((sum, line) => {
         const volume = line.baseVolume * Math.pow(1 + line.volumeGrowth / 100, y);
@@ -589,9 +655,9 @@ export function runCalculations(
         return sum + ((volume * price) / 1000);
       }, 0) * deflator(y)
       : 0;
-    const feesAndCharges = baseline.feesAndCharges * Math.pow(1 + assumptions.funding.feesChargesElasticity / 100, y) * deflator(y) + incomeGenerationIncome;
+    const feesAndCharges = baseline.feesAndCharges * compoundFactor(feesProfile, y) * deflator(y) + incomeGenerationIncome;
 
-    const baseCoreGrants = baseline.coreGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y) * deflator(y);
+    const baseCoreGrants = baseline.coreGrants * compoundFactor(grantProfile, y) * deflator(y);
     let coreGrants = baseCoreGrants;
     if (baseline.grantSchedule.length > 0) {
       const scheduledGrants = baseline.grantSchedule.reduce((sum, grant) => {
@@ -599,7 +665,7 @@ export function runCalculations(
         if (grant.endYear === y && y < YEARS) grantsExpiringInYears.add(label);
         return sum + (grant.value * grantCertaintyFactor(grant.certainty));
       }, 0);
-      const scheduledGrantsWithVariation = scheduledGrants * Math.pow(1 + assumptions.funding.grantVariation / 100, y - 1) * deflator(y);
+      const scheduledGrantsWithVariation = scheduledGrants * compoundFactor(grantProfile, Math.max(0, y - 1)) * deflator(y);
       // Grant schedule entries are treated as additional grant lines layered over the core-grants baseline.
       coreGrants = baseCoreGrants + scheduledGrantsWithVariation;
     }
@@ -630,18 +696,20 @@ export function runCalculations(
         return acc;
       }, { general_fund: 0, grant: 0, other: 0 })
       : { general_fund: 0, grant: 0, other: 0 };
+    const fallbackPayPressure = payBase * (compoundFactor(payProfile, y) - 1);
     const generalFundPayPressure = baseline.workforceModel.enabled
       ? workforcePayPressureBySource.general_fund
-      : payBase * (Math.pow(1 + assumptions.expenditure.payAward / 100, y) - 1);
+      : fallbackPayPressure;
     const grantFundedPayPressure = baseline.workforceModel.enabled
       ? workforcePayPressureBySource.grant
       : 0;
     const otherFundedPayPressure = baseline.workforceModel.enabled
       ? workforcePayPressureBySource.other
       : 0;
-    const payInflationImpact = generalFundPayPressure + grantFundedPayPressure + otherFundedPayPressure;
+    const generalFundPayPressureResolved = baseline.workforceModel.enabled ? generalFundPayPressure : fallbackPayPressure;
+    const payInflationImpact = generalFundPayPressureResolved + grantFundedPayPressure + otherFundedPayPressure;
     const nonPayBase = baseline.nonPay * deflator(y);
-    const nonPayInflationImpact = nonPayBase * (Math.pow(1 + assumptions.expenditure.nonPayInflation / 100, y) - 1);
+    const nonPayInflationImpact = nonPayBase * (compoundFactor(nonPayProfile, y) - 1);
 
     const ascPressure = baseline.ascCohortModel.enabled
       ? (() => {
@@ -650,15 +718,15 @@ export function runCalculations(
         const users65 = c.population65plus * (c.prevalence65plus / 100) * Math.pow(1 + c.growth65plus / 100, y);
         return ((users18 * c.unitCost18to64) + (users65 * c.unitCost65plus)) / 1000 * deflator(y);
       })()
-      : baseline.ascDemandLed * Math.pow(1 + assumptions.expenditure.ascDemandGrowth / 100, y) * deflator(y);
+      : baseline.ascDemandLed * compoundFactor(ascProfile, y) * deflator(y);
 
-    const cscPressure = baseline.cscDemandLed * Math.pow(1 + assumptions.expenditure.cscDemandGrowth / 100, y) * deflator(y);
+    const cscPressure = baseline.cscDemandLed * compoundFactor(cscProfile, y) * deflator(y);
     const otherServiceExp = baseline.otherServiceExp * deflator(y);
     const contractBreakdown: YearResult['contractIndexationBreakdown'] = [];
     const contractIndexationCost = baseline.contractIndexationTracker.enabled
       ? baseline.contractIndexationTracker.contracts.reduce((sum, c) => {
         const upliftMethod = c.upliftMethod ?? (c.clause === 'bespoke' ? 'custom' : c.clause === 'nmw' ? 'fixed' : c.clause);
-        const rate = resolveContractUpliftRate(upliftMethod, assumptions, c.fixedRate ?? assumptions.expenditure.payAward, c.customRate ?? c.bespokeRate);
+        const rate = resolveContractUpliftRate(upliftMethod, assumptions, c.fixedRate ?? yearValue(payProfile, y), c.customRate ?? c.bespokeRate, y);
         const effectiveFactor = resolveContractEffectiveFactor(y, c.effectiveFromYear ?? 1, c.reviewMonth ?? 4, c.phaseInMonths ?? 0);
         const upliftCost = c.value * (Math.pow(1 + rate / 100, y) - 1) * effectiveFactor;
         contractBreakdown.push({
@@ -686,7 +754,7 @@ export function runCalculations(
       : 0;
 
     const customLineResults: CustomLineYearResult[] = baseline.customServiceLines.map((line) => {
-      const inflationRate = resolveInflationRate(line, assumptions);
+      const inflationRate = resolveInflationRate(line, assumptions, y);
       const combinedGrowthRate = inflationRate / 100 + line.demandGrowthRate / 100;
       return {
         id: line.id,
@@ -738,7 +806,7 @@ export function runCalculations(
       savingsProposalResults = sr.results;
     } else {
       const deliveryRamp = Math.min(0.6 + y * 0.1, 1.0);
-      deliveredSavings = assumptions.policy.annualSavingsTarget * (assumptions.expenditure.savingsDeliveryRisk / 100) * deliveryRamp * y;
+      deliveredSavings = yearValue(savingsTargetProfile, y) * (yearValue(savingsDeliveryProfile, y) / 100) * deliveryRamp * y;
       recurringDeliveredSavings = deliveredSavings;
     }
 
@@ -759,7 +827,7 @@ export function runCalculations(
     const structuralGap = rawGap + oneOffDeliveredSavings - nonRecurringCustomLines - oneOffGrowthImpact;
     // Planned reserves use is an explicit annual mitigation amount.
     // 0 means no planned reserves drawdown.
-    const plannedReservesUse = Math.max(0, assumptions.policy.reservesUsage);
+    const plannedReservesUse = Math.max(0, yearValue(reservesUsageProfile, y));
     const reservesDrawdown = rawGap > 0 ? Math.min(rawGap, plannedReservesUse) : 0;
     const netGap = rawGap - reservesDrawdown;
     cumulativeGap += rawGap;
@@ -836,7 +904,7 @@ export function runCalculations(
       totalFunding,
       payBase,
       payInflationImpact,
-      generalFundPayPressure,
+      generalFundPayPressure: generalFundPayPressureResolved,
       grantFundedPayPressure,
       otherFundedPayPressure,
       nonPayBase,
@@ -927,8 +995,8 @@ export function runCalculations(
   const riskFactors = computeRiskFactors(results, effectiveMinimumReservesThreshold, assumptions);
   const overallRiskScore = computeOverallRisk(riskFactors);
   const fundingVolatilityScore =
-    Math.abs(assumptions.funding.grantVariation) * 5 +
-    Math.abs(assumptions.funding.businessRatesGrowth - 2) * 3;
+    Math.abs(yearValue(assumptions.funding.grantVariation, 1)) * 5 +
+    Math.abs(yearValue(assumptions.funding.businessRatesGrowth, 1) - 2) * 3;
   const s114 = computeS114Assessment(results, overallRiskScore, structuralDeficitFlag);
 
   const insights = generateInsights(results, {
@@ -990,13 +1058,13 @@ function computeRiskFactors(
   const gapRatio = totalBudget > 0 ? totalGap / totalBudget : 0;
   const gapScore = gapRatio > 0.15 ? 90 : gapRatio > 0.08 ? 65 : gapRatio > 0.04 ? 40 : 20;
 
-  const grantVolatility = Math.abs(assumptions.funding.grantVariation);
+  const grantVolatility = Math.abs(yearValue(assumptions.funding.grantVariation, 1));
   const volatilityScore = grantVolatility > 5 ? 80 : grantVolatility > 3 ? 55 : grantVolatility > 1 ? 30 : 15;
 
-  const demandPressure = (assumptions.expenditure.ascDemandGrowth + assumptions.expenditure.cscDemandGrowth) / 2;
+  const demandPressure = (yearValue(assumptions.expenditure.ascDemandGrowth, 1) + yearValue(assumptions.expenditure.cscDemandGrowth, 1)) / 2;
   const demandScore = demandPressure > 7 ? 85 : demandPressure > 5 ? 60 : demandPressure > 3 ? 35 : 15;
 
-  const savingsRisk = 100 - assumptions.expenditure.savingsDeliveryRisk;
+  const savingsRisk = 100 - yearValue(assumptions.expenditure.savingsDeliveryRisk, 1);
   const savingsScore = savingsRisk > 30 ? 80 : savingsRisk > 20 ? 55 : savingsRisk > 10 ? 35 : 15;
 
   const level = (s: number): RiskFactor['level'] =>
@@ -1005,7 +1073,7 @@ function computeRiskFactors(
   return [
     { name: 'Reserves Adequacy', score: reservesScore, weight: 0.3, description: `Closing reserves vs minimum threshold ratio: ${reservesRatio.toFixed(2)}x`, level: level(reservesScore) },
     { name: 'Budget Gap Exposure', score: gapScore, weight: 0.25, description: `5-year cumulative gap as % of budget: ${(gapRatio * 100).toFixed(1)}%`, level: level(gapScore) },
-    { name: 'Funding Volatility', score: volatilityScore, weight: 0.2, description: `Grant variation assumption: ${assumptions.funding.grantVariation > 0 ? '+' : ''}${assumptions.funding.grantVariation}%`, level: level(volatilityScore) },
+    { name: 'Funding Volatility', score: volatilityScore, weight: 0.2, description: `Grant variation assumption (Y1): ${yearValue(assumptions.funding.grantVariation, 1) > 0 ? '+' : ''}${yearValue(assumptions.funding.grantVariation, 1)}%`, level: level(volatilityScore) },
     { name: 'Demand Pressure', score: demandScore, weight: 0.15, description: `Average demand growth (ASC/CSC): ${demandPressure.toFixed(1)}% p.a.`, level: level(demandScore) },
     { name: 'Savings Delivery Risk', score: savingsScore, weight: 0.1, description: `Savings not delivered: ${savingsRisk.toFixed(0)}% of programme`, level: level(savingsScore) },
   ];
@@ -1160,41 +1228,41 @@ export function computeSensitivity(
     {
       driver: 'Council Tax +1%',
       change: '+1%',
-      year1Impact: diff(perturb({ funding: { councilTaxIncrease: assumptions.funding.councilTaxIncrease + 1 } }), 1),
-      year3Impact: diff(perturb({ funding: { councilTaxIncrease: assumptions.funding.councilTaxIncrease + 1 } }), 3),
-      year5Impact: diff(perturb({ funding: { councilTaxIncrease: assumptions.funding.councilTaxIncrease + 1 } }), 5),
+      year1Impact: diff(perturb({ funding: { councilTaxIncrease: bumpProfile(assumptions.funding.councilTaxIncrease, 1) } }), 1),
+      year3Impact: diff(perturb({ funding: { councilTaxIncrease: bumpProfile(assumptions.funding.councilTaxIncrease, 1) } }), 3),
+      year5Impact: diff(perturb({ funding: { councilTaxIncrease: bumpProfile(assumptions.funding.councilTaxIncrease, 1) } }), 5),
       direction: 'positive' as const,
     },
     {
       driver: 'Pay Award +1%',
       change: '+1%',
-      year1Impact: diff(perturb({ expenditure: { payAward: assumptions.expenditure.payAward + 1 } }), 1),
-      year3Impact: diff(perturb({ expenditure: { payAward: assumptions.expenditure.payAward + 1 } }), 3),
-      year5Impact: diff(perturb({ expenditure: { payAward: assumptions.expenditure.payAward + 1 } }), 5),
+      year1Impact: diff(perturb({ expenditure: { payAward: bumpProfile(assumptions.expenditure.payAward, 1) } }), 1),
+      year3Impact: diff(perturb({ expenditure: { payAward: bumpProfile(assumptions.expenditure.payAward, 1) } }), 3),
+      year5Impact: diff(perturb({ expenditure: { payAward: bumpProfile(assumptions.expenditure.payAward, 1) } }), 5),
       direction: 'negative' as const,
     },
     {
       driver: 'ASC Demand +1%',
       change: '+1%',
-      year1Impact: diff(perturb({ expenditure: { ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 1 } }), 1),
-      year3Impact: diff(perturb({ expenditure: { ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 1 } }), 3),
-      year5Impact: diff(perturb({ expenditure: { ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 1 } }), 5),
+      year1Impact: diff(perturb({ expenditure: { ascDemandGrowth: bumpProfile(assumptions.expenditure.ascDemandGrowth, 1) } }), 1),
+      year3Impact: diff(perturb({ expenditure: { ascDemandGrowth: bumpProfile(assumptions.expenditure.ascDemandGrowth, 1) } }), 3),
+      year5Impact: diff(perturb({ expenditure: { ascDemandGrowth: bumpProfile(assumptions.expenditure.ascDemandGrowth, 1) } }), 5),
       direction: 'negative' as const,
     },
     {
       driver: 'Grants -2%',
       change: '-2%',
-      year1Impact: diff(perturb({ funding: { grantVariation: assumptions.funding.grantVariation - 2 } }), 1),
-      year3Impact: diff(perturb({ funding: { grantVariation: assumptions.funding.grantVariation - 2 } }), 3),
-      year5Impact: diff(perturb({ funding: { grantVariation: assumptions.funding.grantVariation - 2 } }), 5),
+      year1Impact: diff(perturb({ funding: { grantVariation: bumpProfile(assumptions.funding.grantVariation, -2) } }), 1),
+      year3Impact: diff(perturb({ funding: { grantVariation: bumpProfile(assumptions.funding.grantVariation, -2) } }), 3),
+      year5Impact: diff(perturb({ funding: { grantVariation: bumpProfile(assumptions.funding.grantVariation, -2) } }), 5),
       direction: 'negative' as const,
     },
     {
       driver: 'Savings Delivery -10%',
       change: '-10%',
-      year1Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: assumptions.expenditure.savingsDeliveryRisk - 10 } }), 1),
-      year3Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: assumptions.expenditure.savingsDeliveryRisk - 10 } }), 3),
-      year5Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: assumptions.expenditure.savingsDeliveryRisk - 10 } }), 5),
+      year1Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: bumpProfile(assumptions.expenditure.savingsDeliveryRisk, -10) } }), 1),
+      year3Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: bumpProfile(assumptions.expenditure.savingsDeliveryRisk, -10) } }), 3),
+      year5Impact: diff(perturb({ expenditure: { savingsDeliveryRisk: bumpProfile(assumptions.expenditure.savingsDeliveryRisk, -10) } }), 5),
       direction: 'negative' as const,
     },
   ];
@@ -1228,19 +1296,26 @@ export function computeMonteCarlo(
   let s114Count = 0;
 
   for (let i = 0; i < safeIterations; i += 1) {
+    const sampleProfile = (profile: YearProfile5, stdDev: number, min: number, max: number): YearProfile5 => ({
+      y1: clamp(profile.y1 + gaussian(0, stdDev), min, max),
+      y2: clamp(profile.y2 + gaussian(0, stdDev), min, max),
+      y3: clamp(profile.y3 + gaussian(0, stdDev), min, max),
+      y4: clamp(profile.y4 + gaussian(0, stdDev), min, max),
+      y5: clamp(profile.y5 + gaussian(0, stdDev), min, max),
+    });
     const sampled: Assumptions = {
       funding: {
-        councilTaxIncrease: clamp(assumptions.funding.councilTaxIncrease + gaussian(0, 0.7), 0, 10),
-        businessRatesGrowth: clamp(assumptions.funding.businessRatesGrowth + gaussian(0, 1.2), -8, 10),
-        grantVariation: clamp(assumptions.funding.grantVariation + gaussian(0, 1.5), -15, 8),
-        feesChargesElasticity: clamp(assumptions.funding.feesChargesElasticity + gaussian(0, 1.0), -5, 12),
+        councilTaxIncrease: sampleProfile(assumptions.funding.councilTaxIncrease, 0.7, 0, 10),
+        businessRatesGrowth: sampleProfile(assumptions.funding.businessRatesGrowth, 1.2, -8, 10),
+        grantVariation: sampleProfile(assumptions.funding.grantVariation, 1.5, -15, 8),
+        feesChargesElasticity: sampleProfile(assumptions.funding.feesChargesElasticity, 1.0, -5, 12),
       },
       expenditure: {
-        payAward: clamp(assumptions.expenditure.payAward + gaussian(0, 1.0), 0, 12),
-        nonPayInflation: clamp(assumptions.expenditure.nonPayInflation + gaussian(0, 1.2), 0, 15),
-        ascDemandGrowth: clamp(assumptions.expenditure.ascDemandGrowth + gaussian(0, 1.5), 0, 20),
-        cscDemandGrowth: clamp(assumptions.expenditure.cscDemandGrowth + gaussian(0, 1.3), 0, 20),
-        savingsDeliveryRisk: clamp(assumptions.expenditure.savingsDeliveryRisk + gaussian(0, 8), 20, 100),
+        payAward: sampleProfile(assumptions.expenditure.payAward, 1.0, 0, 12),
+        nonPayInflation: sampleProfile(assumptions.expenditure.nonPayInflation, 1.2, 0, 15),
+        ascDemandGrowth: sampleProfile(assumptions.expenditure.ascDemandGrowth, 1.5, 0, 20),
+        cscDemandGrowth: sampleProfile(assumptions.expenditure.cscDemandGrowth, 1.3, 0, 20),
+        savingsDeliveryRisk: sampleProfile(assumptions.expenditure.savingsDeliveryRisk, 8, 20, 100),
         payAwardByFundingSource: {
           general_fund: clamp(assumptions.expenditure.payAwardByFundingSource.general_fund + gaussian(0, 1.0), 0, 12),
           grant: clamp(assumptions.expenditure.payAwardByFundingSource.grant + gaussian(0, 1.0), 0, 12),
@@ -1254,7 +1329,11 @@ export function computeMonteCarlo(
           other: clamp(assumptions.expenditure.payGroupSensitivity.other + gaussian(0, 0.5), -5, 5),
         },
       },
-      policy: assumptions.policy,
+      policy: {
+        ...assumptions.policy,
+        annualSavingsTarget: { ...assumptions.policy.annualSavingsTarget },
+        reservesUsage: { ...assumptions.policy.reservesUsage },
+      },
       advanced: assumptions.advanced,
     };
 

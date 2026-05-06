@@ -1,26 +1,19 @@
 import React from 'react';
-import { Activity, BarChart3, Users, Eye, Database, TrendingDown, PiggyBank, BookOpenText } from 'lucide-react';
+import { Activity, BarChart3, Database, TrendingDown, PiggyBank, ShieldCheck, Users, Calculator } from 'lucide-react';
 import { useMTFSStore } from '../store/mtfsStore';
 import clsx from 'clsx';
 import { RichTooltip } from './ui/RichTooltip';
 
 const TABS = [
-  { id: 'overview', label: 'Overview', icon: <BarChart3 size={13} /> },
+  { id: 'summary', label: 'Summary', icon: <BarChart3 size={13} /> },
   { id: 'baseline', label: 'Baseline', icon: <Database size={13} /> },
-  { id: 'gap', label: 'Gap Analysis', icon: <Activity size={13} /> },
+  { id: 'savings', label: 'Savings', icon: <TrendingDown size={13} /> },
   { id: 'reserves', label: 'Reserves', icon: <PiggyBank size={13} /> },
-  { id: 'savings', label: 'Savings Programme', icon: <TrendingDown size={13} /> },
-  { id: 'risk', label: 'Risk & Resilience', icon: <Activity size={13} /> },
-  { id: 'highvalue', label: 'High Value', icon: <BarChart3 size={13} /> },
-  { id: 'enhancement', label: 'Enhancement', icon: <BarChart3 size={13} /> },
   { id: 'scenarios', label: 'Scenarios', icon: <BarChart3 size={13} /> },
-  { id: 'insights', label: 'Insights', icon: <Eye size={13} /> },
-  { id: 'technical', label: 'Technical Detail', icon: <BarChart3 size={13} /> },
-  { id: 'section151', label: 'S151 Assurance', icon: <Users size={13} /> },
-  { id: 'governance', label: 'Governance', icon: <BarChart3 size={13} /> },
+  { id: 'governance', label: 'Governance', icon: <ShieldCheck size={13} /> },
 ];
 
-const STRATEGIC_TABS = ['overview', 'gap', 'reserves', 'savings', 'insights', 'scenarios', 'section151'];
+const MEMBER_TABS = new Set(['summary', 'scenarios', 'governance']);
 
 export function Header() {
   const {
@@ -28,20 +21,15 @@ export function Header() {
     setActiveTab,
     viewMode,
     setViewMode,
+    activeRole,
+    setActiveRole,
     result,
     authorityConfig,
   } = useMTFSStore();
 
   const criticalCount = result.insights.filter((i) => i.type === 'critical').length;
   const warningCount = result.insights.filter((i) => i.type === 'warning').length;
-  const openHelpGuide = () => {
-    const helpUrl = `${window.location.pathname}${window.location.search}#help-guide`;
-    window.open(helpUrl, '_blank', 'noopener,noreferrer');
-  };
-
-  const visibleTabs = viewMode === 'strategic'
-    ? TABS.filter((t) => STRATEGIC_TABS.includes(t.id))
-    : TABS;
+  const visibleTabs = activeRole === 'members' ? TABS.filter((t) => MEMBER_TABS.has(t.id)) : TABS;
 
   return (
     <div id="top-header" className="border-b border-[rgba(99,179,237,0.08)] bg-[#0a1120]">
@@ -81,25 +69,24 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={openHelpGuide}
-            title="Open comprehensive help guide in a separate window."
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(59,130,246,0.08)] border border-[rgba(59,130,246,0.25)] text-[#93c5fd] text-[10px] font-semibold hover:bg-[rgba(59,130,246,0.16)] hover:text-[#dbeafe] transition-colors"
-          >
-            <BookOpenText size={11} />
-            Help Guide
-          </button>
-          {criticalCount > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(239,68,68,0.12)] border border-[rgba(239,68,68,0.3)]">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#ef4444] pulse-dot" />
-              <span className="text-[10px] font-bold text-[#ef4444]">{criticalCount} Critical</span>
-            </div>
-          )}
-          {warningCount > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.3)]">
-              <span className="text-[10px] font-bold text-[#f59e0b]">{warningCount} Warnings</span>
-            </div>
-          )}
+          <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
+            {([
+              { id: 'finance' as const, label: 'Finance', icon: <Calculator size={11} /> },
+              { id: 'members' as const, label: 'Member', icon: <Users size={11} /> },
+            ]).map((role) => (
+              <button
+                key={role.id}
+                onClick={() => setActiveRole(role.id)}
+                className={clsx(
+                  'flex items-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-semibold transition-all',
+                  activeRole === role.id ? 'bg-[#3b82f6] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
+                )}
+              >
+                {role.icon}
+                {role.label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
             <RichTooltip content="Switch between strategic summary and full technical finance detail." className="mx-1" />
             {(['strategic', 'technical'] as const).map((mode) => (
@@ -139,7 +126,7 @@ export function Header() {
                   <span className={activeTab === tab.id ? 'text-[#60a5fa]' : 'text-[#4a6080] group-hover:text-[#8ca0c0]'}>{tab.icon}</span>
                   {tab.label}
                   {activeTab === tab.id && <span className="w-1 h-1 rounded-full bg-[#3b82f6]" />}
-                  {tab.id === 'insights' && (criticalCount > 0 || warningCount > 0) && (
+                  {tab.id === 'summary' && (criticalCount > 0 || warningCount > 0) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] pulse-dot ml-0.5" />
                   )}
                 </button>

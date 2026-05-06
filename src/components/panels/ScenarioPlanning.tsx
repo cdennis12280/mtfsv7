@@ -11,7 +11,8 @@ import { RichTooltip } from '../ui/RichTooltip';
 import { exportDecisionPackPdf } from '../../utils/decisionPackPdf';
 import { downloadSnapshotTemplatePack } from '../../utils/snapshotTemplatePack';
 import { DEFAULT_ASSUMPTIONS, runCalculations } from '../../engine/calculations';
-import type { Assumptions, Scenario } from '../../types/financial';
+import type { Assumptions, Scenario, YearProfile5 } from '../../types/financial';
+import { TechnicalDetail } from './TechnicalDetail';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -36,13 +37,41 @@ const typeBadge: Record<string, 'blue' | 'green' | 'red' | 'purple'> = {
 function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assumptions {
   const source = (input ?? {}) as Partial<Assumptions>;
   const expenditure = (source.expenditure ?? {}) as Partial<Assumptions['expenditure']>;
+  const funding = (source.funding ?? {}) as Partial<Assumptions['funding']>;
+  const policy = (source.policy ?? {}) as Partial<Assumptions['policy']>;
+  const profile = (value: unknown, fallback: YearProfile5): YearProfile5 => {
+    if (value && typeof value === 'object') {
+      const v = value as Partial<YearProfile5>;
+      return {
+        y1: Number(v.y1 ?? fallback.y1),
+        y2: Number(v.y2 ?? fallback.y2),
+        y3: Number(v.y3 ?? fallback.y3),
+        y4: Number(v.y4 ?? fallback.y4),
+        y5: Number(v.y5 ?? fallback.y5),
+      };
+    }
+    const n = Number(value ?? fallback.y1);
+    return { y1: n, y2: n, y3: n, y4: n, y5: n };
+  };
   return {
     ...DEFAULT_ASSUMPTIONS,
     ...source,
-    funding: { ...DEFAULT_ASSUMPTIONS.funding, ...(source.funding ?? {}) },
+    funding: {
+      ...DEFAULT_ASSUMPTIONS.funding,
+      ...funding,
+      councilTaxIncrease: profile(funding.councilTaxIncrease, DEFAULT_ASSUMPTIONS.funding.councilTaxIncrease),
+      businessRatesGrowth: profile(funding.businessRatesGrowth, DEFAULT_ASSUMPTIONS.funding.businessRatesGrowth),
+      grantVariation: profile(funding.grantVariation, DEFAULT_ASSUMPTIONS.funding.grantVariation),
+      feesChargesElasticity: profile(funding.feesChargesElasticity, DEFAULT_ASSUMPTIONS.funding.feesChargesElasticity),
+    },
     expenditure: {
       ...DEFAULT_ASSUMPTIONS.expenditure,
       ...expenditure,
+      payAward: profile(expenditure.payAward, DEFAULT_ASSUMPTIONS.expenditure.payAward),
+      nonPayInflation: profile(expenditure.nonPayInflation, DEFAULT_ASSUMPTIONS.expenditure.nonPayInflation),
+      ascDemandGrowth: profile(expenditure.ascDemandGrowth, DEFAULT_ASSUMPTIONS.expenditure.ascDemandGrowth),
+      cscDemandGrowth: profile(expenditure.cscDemandGrowth, DEFAULT_ASSUMPTIONS.expenditure.cscDemandGrowth),
+      savingsDeliveryRisk: profile(expenditure.savingsDeliveryRisk, DEFAULT_ASSUMPTIONS.expenditure.savingsDeliveryRisk),
       payAwardByFundingSource: {
         ...DEFAULT_ASSUMPTIONS.expenditure.payAwardByFundingSource,
         ...(expenditure.payAwardByFundingSource ?? {}),
@@ -52,7 +81,12 @@ function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assump
         ...(expenditure.payGroupSensitivity ?? {}),
       },
     },
-    policy: { ...DEFAULT_ASSUMPTIONS.policy, ...(source.policy ?? {}) },
+    policy: {
+      ...DEFAULT_ASSUMPTIONS.policy,
+      ...policy,
+      annualSavingsTarget: profile(policy.annualSavingsTarget, DEFAULT_ASSUMPTIONS.policy.annualSavingsTarget),
+      reservesUsage: profile(policy.reservesUsage, DEFAULT_ASSUMPTIONS.policy.reservesUsage),
+    },
     advanced: { ...DEFAULT_ASSUMPTIONS.advanced, ...(source.advanced ?? {}) },
   };
 }
@@ -62,6 +96,8 @@ function resolveScenarioType(type: unknown): Scenario['type'] {
     ? type
     : 'custom';
 }
+
+const y1 = (p: YearProfile5) => p.y1;
 
 export function ScenarioPlanning() {
   const {
@@ -247,25 +283,25 @@ export function ScenarioPlanning() {
     ? [
       {
         title: 'Council Tax Assumption',
-        delta: compareScenario.assumptions.funding.councilTaxIncrease - assumptions.funding.councilTaxIncrease,
+        delta: y1(compareScenario.assumptions.funding.councilTaxIncrease) - y1(assumptions.funding.councilTaxIncrease),
         unit: 'pp',
         impactHint: 'Higher values improve funding.',
       },
       {
         title: 'Pay Award Assumption',
-        delta: compareScenario.assumptions.expenditure.payAward - assumptions.expenditure.payAward,
+        delta: y1(compareScenario.assumptions.expenditure.payAward) - y1(assumptions.expenditure.payAward),
         unit: 'pp',
         impactHint: 'Higher values increase cost pressure.',
       },
       {
         title: 'ASC Demand Growth',
-        delta: compareScenario.assumptions.expenditure.ascDemandGrowth - assumptions.expenditure.ascDemandGrowth,
+        delta: y1(compareScenario.assumptions.expenditure.ascDemandGrowth) - y1(assumptions.expenditure.ascDemandGrowth),
         unit: 'pp',
         impactHint: 'Higher values worsen demand-led spending.',
       },
       {
         title: 'Savings Delivery',
-        delta: compareScenario.assumptions.expenditure.savingsDeliveryRisk - assumptions.expenditure.savingsDeliveryRisk,
+        delta: y1(compareScenario.assumptions.expenditure.savingsDeliveryRisk) - y1(assumptions.expenditure.savingsDeliveryRisk),
         unit: 'pp',
         impactHint: 'Higher values improve savings delivery.',
       },
@@ -379,17 +415,17 @@ export function ScenarioPlanning() {
   };
 
   const getFlattenedAssumptions = (input: typeof assumptions) => ([
-    ['Council Tax Increase', input.funding.councilTaxIncrease],
-    ['Business Rates Growth', input.funding.businessRatesGrowth],
-    ['Grant Variation', input.funding.grantVariation],
-    ['Fees & Charges Elasticity', input.funding.feesChargesElasticity],
-    ['Pay Award', input.expenditure.payAward],
-    ['Non-Pay Inflation', input.expenditure.nonPayInflation],
-    ['ASC Demand Growth', input.expenditure.ascDemandGrowth],
-    ['CSC Demand Growth', input.expenditure.cscDemandGrowth],
-    ['Savings Delivery Risk', input.expenditure.savingsDeliveryRisk],
-    ['Annual Savings Target', input.policy.annualSavingsTarget],
-    ['Planned Reserves Use', input.policy.reservesUsage],
+    ['Council Tax Increase (Y1)', input.funding.councilTaxIncrease.y1],
+    ['Business Rates Growth (Y1)', input.funding.businessRatesGrowth.y1],
+    ['Grant Variation (Y1)', input.funding.grantVariation.y1],
+    ['Fees & Charges Elasticity (Y1)', input.funding.feesChargesElasticity.y1],
+    ['Pay Award (Y1)', input.expenditure.payAward.y1],
+    ['Non-Pay Inflation (Y1)', input.expenditure.nonPayInflation.y1],
+    ['ASC Demand Growth (Y1)', input.expenditure.ascDemandGrowth.y1],
+    ['CSC Demand Growth (Y1)', input.expenditure.cscDemandGrowth.y1],
+    ['Savings Delivery Risk (Y1)', input.expenditure.savingsDeliveryRisk.y1],
+    ['Annual Savings Target (Y1)', input.policy.annualSavingsTarget.y1],
+    ['Planned Reserves Use (Y1)', input.policy.reservesUsage.y1],
     ['Protect Social Care', input.policy.socialCareProtection ? 1 : 0],
     ['Real Terms Mode', input.advanced.realTermsToggle ? 1 : 0],
     ['Deflator Rate', input.advanced.inflationRate],
@@ -1066,6 +1102,12 @@ export function ScenarioPlanning() {
           </Card>
         </>
       )}
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Technical Drill-Down</summary>
+        <div className="pt-3">
+          <TechnicalDetail />
+        </div>
+      </details>
     </div>
   );
 }

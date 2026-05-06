@@ -315,18 +315,36 @@ export interface BaselineData {
 
 // ─── Assumptions ─────────────────────────────────────────────────────────────
 export interface FundingAssumptions {
-  councilTaxIncrease: number;       // %
-  businessRatesGrowth: number;      // %
-  grantVariation: number;           // %
-  feesChargesElasticity: number;    // %
+  councilTaxIncrease: YearProfile5 | number;       // %
+  businessRatesGrowth: YearProfile5 | number;      // %
+  grantVariation: YearProfile5 | number;           // %
+  feesChargesElasticity: YearProfile5 | number;    // %
+  /** @deprecated legacy scalar import support only */
+  councilTaxIncreaseLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  businessRatesGrowthLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  grantVariationLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  feesChargesElasticityLegacy?: number;
 }
 
 export interface ExpenditureAssumptions {
-  payAward: number;                 // %
-  nonPayInflation: number;          // %
-  ascDemandGrowth: number;          // %
-  cscDemandGrowth: number;          // %
-  savingsDeliveryRisk: number;      // % achievement (authority-wide default)
+  payAward: YearProfile5 | number;                 // %
+  nonPayInflation: YearProfile5 | number;          // %
+  ascDemandGrowth: YearProfile5 | number;          // %
+  cscDemandGrowth: YearProfile5 | number;          // %
+  savingsDeliveryRisk: YearProfile5 | number;      // % achievement (authority-wide default)
+  /** @deprecated legacy scalar import support only */
+  payAwardLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  nonPayInflationLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  ascDemandGrowthLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  cscDemandGrowthLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  savingsDeliveryRiskLegacy?: number;
   payAwardByFundingSource: {
     general_fund: number;
     grant: number;
@@ -342,9 +360,13 @@ export interface ExpenditureAssumptions {
 }
 
 export interface PolicyLevers {
-  annualSavingsTarget: number;      // £000s — used when no savings programme defined
-  reservesUsage: number;            // £000s per year — planned drawdown override
+  annualSavingsTarget: YearProfile5 | number;      // £000s — used when no savings programme defined
+  reservesUsage: YearProfile5 | number;            // £000s per year — planned drawdown override
   socialCareProtection: boolean;
+  /** @deprecated legacy scalar import support only */
+  annualSavingsTargetLegacy?: number;
+  /** @deprecated legacy scalar import support only */
+  reservesUsageLegacy?: number;
 }
 
 export interface AdvancedControls {
@@ -357,6 +379,13 @@ export interface Assumptions {
   expenditure: ExpenditureAssumptions;
   policy: PolicyLevers;
   advanced: AdvancedControls;
+}
+
+export type YearProfile5 = any;
+
+export interface AssumptionReviewFlag {
+  requiresReview: boolean;
+  reason: string;
 }
 
 // ─── Year Result (extended) ──────────────────────────────────────────────────
@@ -569,6 +598,9 @@ export interface ModelSnapshot {
   metadata: {
     appVersion: string;
     notes: string;
+    schemaVersion?: string;
+    requiresReview?: Record<string, AssumptionReviewFlag>;
+    legacySource?: string;
   };
 }
 

@@ -23,6 +23,8 @@ import type {
   ManualAdjustment,
   ImportMappingProfile,
   SnapshotSaveContext,
+  YearProfile5,
+  AssumptionReviewFlag,
 } from '../types/financial';
 import {
   DEFAULT_ASSUMPTIONS,
@@ -48,8 +50,11 @@ interface MTFSStore {
   activeScenarioId: string | null;
   scenariosFocus: 'none' | 'snapshots';
   activeTab: string;
+  activeRole: 'finance' | 'members';
   viewMode: 'strategic' | 'technical';
   audienceMode: 'finance' | 'members';
+  uiWarnings: Array<{ id: string; severity: 'warning' | 'critical'; message: string; targetTab: string }>;
+  advancedPanelsOpen: Record<string, boolean>;
   accessibilityPreset: 'default' | 'large-text' | 'high-contrast' | 'dyslexia-friendly';
   densityMode: 'comfortable' | 'compact' | 'presentation';
   snapshots: ModelSnapshot[];
@@ -141,6 +146,9 @@ interface MTFSStore {
   loadScenario: (id: string) => void;
 
   setActiveTab: (tab: string) => void;
+  setActiveRole: (role: 'finance' | 'members') => void;
+  setUiWarnings: (warnings: Array<{ id: string; severity: 'warning' | 'critical'; message: string; targetTab: string }>) => void;
+  setAdvancedPanelOpen: (panelId: string, open: boolean) => void;
   setScenariosFocus: (focus: 'none' | 'snapshots') => void;
   setViewMode: (mode: 'strategic' | 'technical') => void;
   setAudienceMode: (mode: 'finance' | 'members') => void;
@@ -164,6 +172,33 @@ const SCENARIO_COLORS = [
 ];
 
 const SNAPSHOT_STORAGE_KEY = 'mtfs-snapshots-v1';
+
+function makeYearProfile(value: number): YearProfile5 {
+  return { y1: value, y2: value, y3: value, y4: value, y5: value };
+}
+
+function coerceYearProfile(value: unknown, fallback: YearProfile5): YearProfile5 {
+  if (value && typeof value === 'object') {
+    const src = value as Partial<YearProfile5>;
+    return {
+      y1: Number.isFinite(Number(src.y1)) ? Number(src.y1) : fallback.y1,
+      y2: Number.isFinite(Number(src.y2)) ? Number(src.y2) : fallback.y2,
+      y3: Number.isFinite(Number(src.y3)) ? Number(src.y3) : fallback.y3,
+      y4: Number.isFinite(Number(src.y4)) ? Number(src.y4) : fallback.y4,
+      y5: Number.isFinite(Number(src.y5)) ? Number(src.y5) : fallback.y5,
+    };
+  }
+  if (Number.isFinite(Number(value))) return makeYearProfile(Number(value));
+  return fallback;
+}
+
+function incrementYearProfile(profile: YearProfile5 | number, delta: number): YearProfile5 {
+  if (typeof profile === 'number') {
+    const v = profile + delta;
+    return { y1: v, y2: v, y3: v, y4: v, y5: v };
+  }
+  return { y1: profile.y1 + delta, y2: profile.y2 + delta, y3: profile.y3 + delta, y4: profile.y4 + delta, y5: profile.y5 + delta };
+}
 
 function loadSnapshotsFromStorage(): ModelSnapshot[] {
   if (typeof window === 'undefined') return [];
@@ -209,16 +244,27 @@ function recompute(
 function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assumptions {
   const source = (input ?? {}) as Partial<Assumptions>;
   const expenditure = (source.expenditure ?? {}) as Partial<Assumptions['expenditure']>;
+  const funding = (source.funding ?? {}) as Partial<Assumptions['funding']>;
+  const policy = (source.policy ?? {}) as Partial<Assumptions['policy']>;
   return {
     ...DEFAULT_ASSUMPTIONS,
     ...source,
     funding: {
       ...DEFAULT_ASSUMPTIONS.funding,
-      ...(source.funding ?? {}),
+      ...funding,
+      councilTaxIncrease: coerceYearProfile(funding.councilTaxIncrease, DEFAULT_ASSUMPTIONS.funding.councilTaxIncrease),
+      businessRatesGrowth: coerceYearProfile(funding.businessRatesGrowth, DEFAULT_ASSUMPTIONS.funding.businessRatesGrowth),
+      grantVariation: coerceYearProfile(funding.grantVariation, DEFAULT_ASSUMPTIONS.funding.grantVariation),
+      feesChargesElasticity: coerceYearProfile(funding.feesChargesElasticity, DEFAULT_ASSUMPTIONS.funding.feesChargesElasticity),
     },
     expenditure: {
       ...DEFAULT_ASSUMPTIONS.expenditure,
       ...expenditure,
+      payAward: coerceYearProfile(expenditure.payAward, DEFAULT_ASSUMPTIONS.expenditure.payAward),
+      nonPayInflation: coerceYearProfile(expenditure.nonPayInflation, DEFAULT_ASSUMPTIONS.expenditure.nonPayInflation),
+      ascDemandGrowth: coerceYearProfile(expenditure.ascDemandGrowth, DEFAULT_ASSUMPTIONS.expenditure.ascDemandGrowth),
+      cscDemandGrowth: coerceYearProfile(expenditure.cscDemandGrowth, DEFAULT_ASSUMPTIONS.expenditure.cscDemandGrowth),
+      savingsDeliveryRisk: coerceYearProfile(expenditure.savingsDeliveryRisk, DEFAULT_ASSUMPTIONS.expenditure.savingsDeliveryRisk),
       payAwardByFundingSource: {
         ...DEFAULT_ASSUMPTIONS.expenditure.payAwardByFundingSource,
         ...(expenditure.payAwardByFundingSource ?? {}),
@@ -230,7 +276,9 @@ function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assump
     },
     policy: {
       ...DEFAULT_ASSUMPTIONS.policy,
-      ...(source.policy ?? {}),
+      ...policy,
+      annualSavingsTarget: coerceYearProfile(policy.annualSavingsTarget, DEFAULT_ASSUMPTIONS.policy.annualSavingsTarget),
+      reservesUsage: coerceYearProfile(policy.reservesUsage, DEFAULT_ASSUMPTIONS.policy.reservesUsage),
     },
     advanced: {
       ...DEFAULT_ASSUMPTIONS.advanced,
@@ -277,12 +325,60 @@ function coerceSnapshotLike(input: unknown): ModelSnapshot | null {
   if (!input || typeof input !== 'object') return null;
   const candidate = input as Partial<ModelSnapshot>;
   if (!candidate.assumptions || !candidate.baseline) return null;
+  const requiresReview: Record<string, AssumptionReviewFlag> = {};
+  const raw = candidate.assumptions as unknown as Record<string, unknown>;
+  const rawFunding = (raw?.funding as Record<string, unknown>) ?? {};
+  const rawExpenditure = (raw?.expenditure as Record<string, unknown>) ?? {};
+  const rawPolicy = (raw?.policy as Record<string, unknown>) ?? {};
+  const markIfScalar = (container: Record<string, unknown>, key: string) => {
+    if (typeof container[key] === 'number') {
+      requiresReview[key] = { requiresReview: true, reason: 'Legacy scalar imported; Year 1–5 reset to zero for explicit review.' };
+    }
+  };
+  markIfScalar(rawFunding, 'councilTaxIncrease');
+  markIfScalar(rawFunding, 'businessRatesGrowth');
+  markIfScalar(rawFunding, 'grantVariation');
+  markIfScalar(rawFunding, 'feesChargesElasticity');
+  markIfScalar(rawExpenditure, 'payAward');
+  markIfScalar(rawExpenditure, 'nonPayInflation');
+  markIfScalar(rawExpenditure, 'ascDemandGrowth');
+  markIfScalar(rawExpenditure, 'cscDemandGrowth');
+  markIfScalar(rawExpenditure, 'savingsDeliveryRisk');
+  markIfScalar(rawPolicy, 'annualSavingsTarget');
+  markIfScalar(rawPolicy, 'reservesUsage');
+
+  const normalized = normalizeAssumptions(candidate.assumptions as Assumptions);
+  const zeroIfFlagged = (path: string, current: YearProfile5): YearProfile5 =>
+    requiresReview[path]?.requiresReview ? { y1: 0, y2: 0, y3: 0, y4: 0, y5: 0 } : current;
+
   return {
     id: candidate.id || `snapshot-${Date.now()}`,
     name: candidate.name || 'Imported Snapshot',
     description: candidate.description || '',
     createdAt: candidate.createdAt || new Date().toISOString(),
-    assumptions: normalizeAssumptions(candidate.assumptions as Assumptions),
+    assumptions: {
+      ...normalized,
+      funding: {
+        ...normalized.funding,
+        councilTaxIncrease: zeroIfFlagged('councilTaxIncrease', normalized.funding.councilTaxIncrease),
+        businessRatesGrowth: zeroIfFlagged('businessRatesGrowth', normalized.funding.businessRatesGrowth),
+        grantVariation: zeroIfFlagged('grantVariation', normalized.funding.grantVariation),
+        feesChargesElasticity: zeroIfFlagged('feesChargesElasticity', normalized.funding.feesChargesElasticity),
+      },
+      expenditure: {
+        ...normalized.expenditure,
+        payAward: zeroIfFlagged('payAward', normalized.expenditure.payAward),
+        nonPayInflation: zeroIfFlagged('nonPayInflation', normalized.expenditure.nonPayInflation),
+        ascDemandGrowth: zeroIfFlagged('ascDemandGrowth', normalized.expenditure.ascDemandGrowth),
+        cscDemandGrowth: zeroIfFlagged('cscDemandGrowth', normalized.expenditure.cscDemandGrowth),
+        savingsDeliveryRisk: zeroIfFlagged('savingsDeliveryRisk', normalized.expenditure.savingsDeliveryRisk),
+      },
+      policy: {
+        ...normalized.policy,
+        annualSavingsTarget: zeroIfFlagged('annualSavingsTarget', normalized.policy.annualSavingsTarget),
+        reservesUsage: zeroIfFlagged('reservesUsage', normalized.policy.reservesUsage),
+      },
+    },
     baseline: candidate.baseline,
     savingsProposals: candidate.savingsProposals || [],
     authorityConfig: { ...DEFAULT_AUTHORITY_CONFIG, ...(candidate.authorityConfig || {}) },
@@ -290,6 +386,12 @@ function coerceSnapshotLike(input: unknown): ModelSnapshot | null {
     metadata: {
       appVersion: candidate.metadata?.appVersion || 'v7.0',
       notes: candidate.metadata?.notes || '',
+      schemaVersion: candidate.metadata?.schemaVersion || 'mtfs-v8-yearprofiles',
+      requiresReview: {
+        ...(candidate.metadata?.requiresReview ?? {}),
+        ...requiresReview,
+      },
+      legacySource: candidate.metadata?.legacySource || (Object.keys(requiresReview).length > 0 ? 'legacy-scalar-import' : undefined),
     },
   };
 }
@@ -309,9 +411,15 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
   scenarios: [],
   activeScenarioId: null,
   scenariosFocus: 'none',
-  activeTab: 'overview',
+  activeTab: 'summary',
+  activeRole: 'finance',
   viewMode: 'technical',
   audienceMode: 'finance',
+  uiWarnings: [],
+  advancedPanelsOpen: {
+    baselineAdvanced: false,
+    savingsAdvanced: false,
+  },
   accessibilityPreset: 'default',
   densityMode: 'comfortable',
   snapshots: loadSnapshotsFromStorage(),
@@ -331,7 +439,9 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateFunding: (key, value, description) =>
     set((s) => {
-      const assumptions = { ...s.assumptions, funding: { ...s.assumptions.funding, [key]: value } };
+      const existing = s.assumptions.funding[key];
+      const nextValue = typeof existing === 'object' && existing !== null ? makeYearProfile(value) : value;
+      const assumptions = { ...s.assumptions, funding: { ...s.assumptions.funding, [key]: nextValue } };
       const desc = description ?? `Funding updated: ${String(key)}`;
       const result = recompute(assumptions, s.baseline, s.savingsProposals);
       return {
@@ -344,7 +454,9 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateExpenditure: (key, value, description) =>
     set((s) => {
-      const assumptions = { ...s.assumptions, expenditure: { ...s.assumptions.expenditure, [key]: value } };
+      const existing = s.assumptions.expenditure[key];
+      const nextValue = typeof existing === 'object' && existing !== null ? makeYearProfile(value) : value;
+      const assumptions = { ...s.assumptions, expenditure: { ...s.assumptions.expenditure, [key]: nextValue } };
       const desc = description ?? `Expenditure updated: ${String(key)}`;
       const result = recompute(assumptions, s.baseline, s.savingsProposals);
       return {
@@ -401,7 +513,9 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updatePolicy: (key, value, description) =>
     set((s) => {
-      const assumptions = { ...s.assumptions, policy: { ...s.assumptions.policy, [key]: value } };
+      const existing = s.assumptions.policy[key];
+      const nextValue = (typeof existing === 'object' && existing !== null && typeof value === 'number') ? makeYearProfile(value) : value;
+      const assumptions = { ...s.assumptions, policy: { ...s.assumptions.policy, [key]: nextValue as never } };
       const desc = description ?? `Policy updated: ${String(key)}`;
       const result = recompute(assumptions, s.baseline, s.savingsProposals);
       return {
@@ -872,7 +986,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
           ...assumptions,
           expenditure: {
             ...assumptions.expenditure,
-            payAward: assumptions.expenditure.payAward + 2,
+            payAward: incrementYearProfile(assumptions.expenditure.payAward, 2),
             payAwardByFundingSource: {
               general_fund: assumptions.expenditure.payAwardByFundingSource.general_fund + 2,
               grant: assumptions.expenditure.payAwardByFundingSource.grant + 2,
@@ -882,22 +996,28 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         };
       }
       if (name === 'asc_demand_shock' || name === 'worst_case') {
-        assumptions = { ...assumptions, expenditure: { ...assumptions.expenditure, ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 15 } };
+        assumptions = { ...assumptions, expenditure: { ...assumptions.expenditure, ascDemandGrowth: incrementYearProfile(assumptions.expenditure.ascDemandGrowth, 15) } };
       }
       if (name === 'grant_reduction_year2' || name === 'worst_case') {
-        assumptions = { ...assumptions, funding: { ...assumptions.funding, grantVariation: assumptions.funding.grantVariation - 3 } };
+        assumptions = { ...assumptions, funding: { ...assumptions.funding, grantVariation: incrementYearProfile(assumptions.funding.grantVariation, -3) } };
       }
       if (name === 'worst_case') {
         assumptions = {
           ...assumptions,
           expenditure: {
             ...assumptions.expenditure,
-            nonPayInflation: assumptions.expenditure.nonPayInflation + 3,
-            savingsDeliveryRisk: Math.max(30, assumptions.expenditure.savingsDeliveryRisk - 20),
+            nonPayInflation: incrementYearProfile(assumptions.expenditure.nonPayInflation, 3),
+            savingsDeliveryRisk: {
+              y1: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y1 - 20),
+              y2: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y2 - 20),
+              y3: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y3 - 20),
+              y4: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y4 - 20),
+              y5: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y5 - 20),
+            },
           },
           funding: {
             ...assumptions.funding,
-            businessRatesGrowth: assumptions.funding.businessRatesGrowth - 2,
+            businessRatesGrowth: incrementYearProfile(assumptions.funding.businessRatesGrowth, -2),
           },
         };
       }
@@ -1035,7 +1155,25 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     }
   },
 
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => {
+    const redirects: Record<string, string> = {
+      overview: 'summary',
+      gap: 'summary',
+      insights: 'summary',
+      highvalue: 'baseline',
+      enhancement: 'baseline',
+      drivers: 'baseline',
+      technical: 'governance',
+      section151: 'governance',
+      risk: 'summary',
+      help: 'governance',
+    };
+    set({ activeTab: redirects[tab] ?? tab });
+  },
+  setActiveRole: (role) => set({ activeRole: role, audienceMode: role }),
+  setUiWarnings: (warnings) => set({ uiWarnings: warnings }),
+  setAdvancedPanelOpen: (panelId, open) =>
+    set((s) => ({ advancedPanelsOpen: { ...s.advancedPanelsOpen, [panelId]: open } })),
   setScenariosFocus: (focus) => set({ scenariosFocus: focus }),
   setViewMode: (mode) => set({ viewMode: mode }),
   setAudienceMode: (mode) => set({ audienceMode: mode }),
@@ -1153,31 +1291,41 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     const s = get();
     const assumptions: Assumptions = preset === 'optimistic'
       ? {
-        funding: { councilTaxIncrease: 4.99, businessRatesGrowth: 3.0, grantVariation: 1.0, feesChargesElasticity: 4.0 },
+        funding: {
+          councilTaxIncrease: makeYearProfile(4.99),
+          businessRatesGrowth: makeYearProfile(3.0),
+          grantVariation: makeYearProfile(1.0),
+          feesChargesElasticity: makeYearProfile(4.0),
+        },
         expenditure: {
-          payAward: 2.5,
-          nonPayInflation: 2.0,
-          ascDemandGrowth: 3.5,
-          cscDemandGrowth: 3.0,
-          savingsDeliveryRisk: 95,
+          payAward: makeYearProfile(2.5),
+          nonPayInflation: makeYearProfile(2.0),
+          ascDemandGrowth: makeYearProfile(3.5),
+          cscDemandGrowth: makeYearProfile(3.0),
+          savingsDeliveryRisk: makeYearProfile(95),
           payAwardByFundingSource: { general_fund: 2.5, grant: 2.5, other: 2.5 },
           payGroupSensitivity: { default: 0, teachers: 0, njc: 0, senior: 0, other: 0 },
         },
-        policy: { ...s.assumptions.policy, annualSavingsTarget: 3_000 },
+        policy: { ...s.assumptions.policy, annualSavingsTarget: makeYearProfile(3_000) },
         advanced: s.assumptions.advanced,
       }
       : {
-        funding: { councilTaxIncrease: 2.99, businessRatesGrowth: 0.5, grantVariation: -4.0, feesChargesElasticity: 0.5 },
+        funding: {
+          councilTaxIncrease: makeYearProfile(2.99),
+          businessRatesGrowth: makeYearProfile(0.5),
+          grantVariation: makeYearProfile(-4.0),
+          feesChargesElasticity: makeYearProfile(0.5),
+        },
         expenditure: {
-          payAward: 5.0,
-          nonPayInflation: 5.0,
-          ascDemandGrowth: 8.0,
-          cscDemandGrowth: 6.5,
-          savingsDeliveryRisk: 65,
+          payAward: makeYearProfile(5.0),
+          nonPayInflation: makeYearProfile(5.0),
+          ascDemandGrowth: makeYearProfile(8.0),
+          cscDemandGrowth: makeYearProfile(6.5),
+          savingsDeliveryRisk: makeYearProfile(65),
           payAwardByFundingSource: { general_fund: 5.0, grant: 5.0, other: 5.0 },
           payGroupSensitivity: { default: 0, teachers: 0, njc: 0, senior: 0, other: 0 },
         },
-        policy: { ...s.assumptions.policy, annualSavingsTarget: 6_000 },
+        policy: { ...s.assumptions.policy, annualSavingsTarget: makeYearProfile(6_000) },
         advanced: s.assumptions.advanced,
       };
 
