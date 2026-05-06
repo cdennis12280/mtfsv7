@@ -22,6 +22,7 @@ import type {
   GrowthProposal,
   ManualAdjustment,
   ImportMappingProfile,
+  SnapshotSaveContext,
 } from '../types/financial';
 import {
   DEFAULT_ASSUMPTIONS,
@@ -45,6 +46,7 @@ interface MTFSStore {
 
   scenarios: Scenario[];
   activeScenarioId: string | null;
+  scenariosFocus: 'none' | 'snapshots';
   activeTab: string;
   viewMode: 'strategic' | 'technical';
   audienceMode: 'finance' | 'members';
@@ -139,11 +141,12 @@ interface MTFSStore {
   loadScenario: (id: string) => void;
 
   setActiveTab: (tab: string) => void;
+  setScenariosFocus: (focus: 'none' | 'snapshots') => void;
   setViewMode: (mode: 'strategic' | 'technical') => void;
   setAudienceMode: (mode: 'finance' | 'members') => void;
   setAccessibilityPreset: (preset: 'default' | 'large-text' | 'high-contrast' | 'dyslexia-friendly') => void;
   setDensityMode: (mode: 'comfortable' | 'compact' | 'presentation') => void;
-  saveSnapshot: (name: string, description: string) => void;
+  saveSnapshot: (name: string, description: string, context?: SnapshotSaveContext) => void;
   loadSnapshot: (id: string) => void;
   deleteSnapshot: (id: string) => void;
   exportSnapshotAsJson: (id: string) => string | null;
@@ -200,7 +203,40 @@ function recompute(
   baseline: BaselineData,
   savingsProposals: SavingsProposal[]
 ): MTFSResult {
-  return runCalculations(assumptions, baseline, savingsProposals);
+  return runCalculations(normalizeAssumptions(assumptions), baseline, savingsProposals);
+}
+
+function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assumptions {
+  const source = (input ?? {}) as Partial<Assumptions>;
+  const expenditure = (source.expenditure ?? {}) as Partial<Assumptions['expenditure']>;
+  return {
+    ...DEFAULT_ASSUMPTIONS,
+    ...source,
+    funding: {
+      ...DEFAULT_ASSUMPTIONS.funding,
+      ...(source.funding ?? {}),
+    },
+    expenditure: {
+      ...DEFAULT_ASSUMPTIONS.expenditure,
+      ...expenditure,
+      payAwardByFundingSource: {
+        ...DEFAULT_ASSUMPTIONS.expenditure.payAwardByFundingSource,
+        ...(expenditure.payAwardByFundingSource ?? {}),
+      },
+      payGroupSensitivity: {
+        ...DEFAULT_ASSUMPTIONS.expenditure.payGroupSensitivity,
+        ...(expenditure.payGroupSensitivity ?? {}),
+      },
+    },
+    policy: {
+      ...DEFAULT_ASSUMPTIONS.policy,
+      ...(source.policy ?? {}),
+    },
+    advanced: {
+      ...DEFAULT_ASSUMPTIONS.advanced,
+      ...(source.advanced ?? {}),
+    },
+  };
 }
 
 function resolveUniqueScenarioName(name: string, scenarios: Scenario[]): string {
@@ -246,7 +282,7 @@ function coerceSnapshotLike(input: unknown): ModelSnapshot | null {
     name: candidate.name || 'Imported Snapshot',
     description: candidate.description || '',
     createdAt: candidate.createdAt || new Date().toISOString(),
-    assumptions: candidate.assumptions,
+    assumptions: normalizeAssumptions(candidate.assumptions as Assumptions),
     baseline: candidate.baseline,
     savingsProposals: candidate.savingsProposals || [],
     authorityConfig: { ...DEFAULT_AUTHORITY_CONFIG, ...(candidate.authorityConfig || {}) },
@@ -272,6 +308,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   scenarios: [],
   activeScenarioId: null,
+  scenariosFocus: 'none',
   activeTab: 'overview',
   viewMode: 'technical',
   audienceMode: 'finance',
@@ -282,11 +319,12 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   setAssumptions: (a, description = 'Assumptions updated') =>
     set((s) => {
-      const result = recompute(a, s.baseline, s.savingsProposals);
+      const assumptions = normalizeAssumptions(a);
+      const result = recompute(assumptions, s.baseline, s.savingsProposals);
       return {
-        assumptions: a,
+        assumptions,
         result,
-        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(a, description)],
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, description)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, description)],
       };
     }),
@@ -967,7 +1005,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       name: resolvedName,
       description,
       type,
-      assumptions: { ...s.assumptions },
+      assumptions: normalizeAssumptions(s.assumptions),
       result: { ...s.result },
       createdAt: new Date().toISOString(),
       color: SCENARIO_COLORS[colorIndex],
@@ -985,24 +1023,32 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     const s = get();
     const scenario = s.scenarios.find((sc) => sc.id === id);
     if (scenario) {
-      const result = recompute(scenario.assumptions, s.baseline, s.savingsProposals);
+      const assumptions = normalizeAssumptions(scenario.assumptions);
+      const result = recompute(assumptions, s.baseline, s.savingsProposals);
       set({
-        assumptions: scenario.assumptions,
+        assumptions,
         result,
         activeScenarioId: id,
-        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(scenario.assumptions, `Scenario loaded: ${scenario.name}`)],
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, `Scenario loaded: ${scenario.name}`)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, `Scenario loaded: ${scenario.name}`)],
       });
     }
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setScenariosFocus: (focus) => set({ scenariosFocus: focus }),
   setViewMode: (mode) => set({ viewMode: mode }),
   setAudienceMode: (mode) => set({ audienceMode: mode }),
   setAccessibilityPreset: (preset) => set({ accessibilityPreset: preset }),
   setDensityMode: (mode) => set({ densityMode: mode }),
-  saveSnapshot: (name, description) =>
+  saveSnapshot: (name, description, context) =>
     set((s) => {
+      const contextCounts = Object.entries(context?.counts ?? {})
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ');
+      const contextNote = context
+        ? `source=${context.sourceCard}; enabled=${context.sectionEnabled ?? 'n/a'}${contextCounts ? `; ${contextCounts}` : ''}`
+        : '';
       const snapshot: ModelSnapshot = {
         id: `snapshot-${Date.now()}`,
         name,
@@ -1015,7 +1061,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         scenarios: s.scenarios,
         metadata: {
           appVersion: 'v7.0',
-          notes: s.modelRunDescription || '',
+          notes: [s.modelRunDescription || '', contextNote].filter(Boolean).join(' | '),
         },
       };
       const snapshots = [snapshot, ...s.snapshots];
@@ -1026,15 +1072,16 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     set((s) => {
       const snapshot = s.snapshots.find((x) => x.id === id);
       if (!snapshot) return {};
-      const result = recompute(snapshot.assumptions, snapshot.baseline, snapshot.savingsProposals);
+      const assumptions = normalizeAssumptions(snapshot.assumptions);
+      const result = recompute(assumptions, snapshot.baseline, snapshot.savingsProposals);
       return {
-        assumptions: snapshot.assumptions,
+        assumptions,
         baseline: snapshot.baseline,
         savingsProposals: snapshot.savingsProposals,
         authorityConfig: snapshot.authorityConfig,
         scenarios: snapshot.scenarios,
         result,
-        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(snapshot.assumptions, `Snapshot loaded: ${snapshot.name}`)],
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, `Snapshot loaded: ${snapshot.name}`)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, `Snapshot loaded: ${snapshot.name}`)],
       };
     }),

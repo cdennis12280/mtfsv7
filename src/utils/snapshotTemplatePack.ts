@@ -316,6 +316,79 @@ export async function downloadSnapshotTemplatePack(): Promise<void> {
   const good2Result = runCalculations(good2.assumptions, good2.baseline, good2.savingsProposals);
   const badResult = runCalculations(bad.assumptions, bad.baseline, bad.savingsProposals);
 
+  const wncSavings = [
+    makeSavings('wnc-p7-1', 'Planning Service Income (2526-B4-035)', 60, 1, 92, true),
+    makeSavings('wnc-p7-2', 'Parking Regulations and Charges (2526-B4-055)', 50, 1, 80, true),
+    makeSavings('wnc-p7-3', 'Regeneration Income Generation (2526-B4-007)', 65, 1, 75, true),
+    makeSavings('wnc-p7-4', 'Internal Audit Restructure (2526-B4-127)', 66, 1, 90, true),
+    makeSavings('wnc-p7-5', 'Integrated Commissioning (2526-B4-107)', 69, 2, 82, true),
+    makeSavings('wnc-p7-6', 'Property Estates Staffing Realignment (2526-B4-136)', 64, 1, 85, true),
+    makeSavings('wnc-p7-7', 'Economic Growth Revenue Budget Savings (2526-B4-075)', 65, 1, 84, true),
+    makeSavings('wnc-p7-8', 'Home Adaptations Income Uplift (2526-B4-009)', 58, 2, 78, true),
+  ];
+
+  const wncP7 = buildSnapshot(
+    'snapshot-wnc-p7-2025-26',
+    'WNC P7 2025-26 - CFO Working Simulation',
+    'WNC-oriented scenario calibrated from Revenue Monitoring P7 pack context, Appendix B savings lines, and 2025/26 approved budget scale.',
+    {
+      funding: {
+        councilTaxIncrease: 4.99,
+        businessRatesGrowth: 1.4,
+        grantVariation: 0.2,
+        feesChargesElasticity: 1.9,
+      },
+      expenditure: {
+        payAward: 3.6,
+        nonPayInflation: 3.3,
+        ascDemandGrowth: 5.4,
+        cscDemandGrowth: 4.9,
+        savingsDeliveryRisk: 78,
+      },
+      policy: {
+        annualSavingsTarget: 20000,
+        reservesUsage: 1800,
+      },
+      advanced: {
+        realTermsToggle: false,
+        inflationRate: 2.5,
+      },
+    },
+    {
+      councilTax: 266500,
+      businessRates: 81000,
+      coreGrants: 51500,
+      feesAndCharges: 32800,
+      pay: 182000,
+      nonPay: 95200,
+      ascDemandLed: 101500,
+      cscDemandLed: 82500,
+      otherServiceExp: 12000,
+      generalFundReserves: 28500,
+      earmarkedReserves: 76000,
+      reservesMinimumThreshold: 18000,
+    },
+    wncSavings
+  );
+  wncP7.authorityConfig = {
+    ...wncP7.authorityConfig,
+    authorityName: 'West Northamptonshire Council',
+    section151Officer: 'Martin Henry (Interim)',
+    chiefExecutive: 'Martin Henry (Interim)',
+    reportingPeriod: '2025/26',
+    reportDate: '2025-12-22',
+    authorityType: 'Unitary',
+    population: 430000,
+    strategicPriority1: 'Financial sustainability and balanced budget delivery',
+    strategicPriority2: 'Demand-led services stability (ASC and CSC)',
+    strategicPriority3: 'Savings delivery and reserves resilience',
+  };
+  wncP7.metadata = {
+    appVersion: 'v7.0',
+    notes: 'Source context: Revenue Monitoring P7 2025-26, Appendix A/B/C titles and published extracts, plus WNC approved 2025-26 budget scale.',
+  };
+  const wncResult = runCalculations(wncP7.assumptions, wncP7.baseline, wncP7.savingsProposals);
+
   const workbook = xlsx.utils.book_new();
 
   const instructionsRows = [
@@ -340,6 +413,7 @@ export async function downloadSnapshotTemplatePack(): Promise<void> {
     [''],
     ['How to use examples'],
     ['- Review Example_Good_1 / Example_Good_2 / Example_Bad_1 tabs to understand good vs weak settings.'],
+    ['- Review Example_WNC_P7 for a West Northamptonshire-oriented starting point.'],
     ['- Copy values from example tabs into template tabs if you want to start from them.'],
     [''],
     ['Important notes'],
@@ -353,6 +427,7 @@ export async function downloadSnapshotTemplatePack(): Promise<void> {
     [good1.name, good1.description, good1Result.totalGap, good1Result.totalStructuralGap, good1Result.overallRiskScore, good1Result.yearReservesExhausted ?? 'No', good1Result.years[4]?.totalClosingReserves ?? 0, good1Result.s114Triggered ? 'Yes' : 'No'],
     [good2.name, good2.description, good2Result.totalGap, good2Result.totalStructuralGap, good2Result.overallRiskScore, good2Result.yearReservesExhausted ?? 'No', good2Result.years[4]?.totalClosingReserves ?? 0, good2Result.s114Triggered ? 'Yes' : 'No'],
     [bad.name, bad.description, badResult.totalGap, badResult.totalStructuralGap, badResult.overallRiskScore, badResult.yearReservesExhausted ?? 'No', badResult.years[4]?.totalClosingReserves ?? 0, badResult.s114Triggered ? 'Yes' : 'No'],
+    [wncP7.name, wncP7.description, wncResult.totalGap, wncResult.totalStructuralGap, wncResult.overallRiskScore, wncResult.yearReservesExhausted ?? 'No', wncResult.years[4]?.totalClosingReserves ?? 0, wncResult.s114Triggered ? 'Yes' : 'No'],
   ];
 
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(instructionsRows), 'Instructions');
@@ -365,6 +440,7 @@ export async function downloadSnapshotTemplatePack(): Promise<void> {
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(exampleReadableRows(good1)), 'Example_Good_1');
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(exampleReadableRows(good2)), 'Example_Good_2');
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(exampleReadableRows(bad)), 'Example_Bad_1');
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(exampleReadableRows(wncP7)), 'Example_WNC_P7');
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(summaryRows), 'Example_Summary');
 
   const bytes = xlsx.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;

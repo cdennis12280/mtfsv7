@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Trash2, AlertTriangle, Zap, Upload, Download, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, AlertTriangle, Zap, Upload, Download, CheckCircle2, Save, ArrowRight } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { RichTooltip } from '../ui/RichTooltip';
@@ -132,6 +132,9 @@ export function EnhancementPanel() {
     removeImportMappingProfile,
     applyOverlayImport,
     clearOverlayImports,
+    saveSnapshot,
+    setActiveTab,
+    setScenariosFocus,
   } = useMTFSStore();
   const [payImportStatus, setPayImportStatus] = React.useState<ImportStatus>(IDLE_IMPORT_STATUS);
   const [contractImportStatus, setContractImportStatus] = React.useState<ImportStatus>(IDLE_IMPORT_STATUS);
@@ -145,7 +148,62 @@ export function EnhancementPanel() {
   const [isOverrideTemplateLoading, setIsOverrideTemplateLoading] = React.useState(false);
   const [selectedMappingProfileId, setSelectedMappingProfileId] = React.useState<string>('');
   const [overlayImportStatus, setOverlayImportStatus] = React.useState<ImportStatus>(IDLE_IMPORT_STATUS);
+  const [a31Status, setA31Status] = React.useState<ImportStatus>(IDLE_IMPORT_STATUS);
   const [reconFilter, setReconFilter] = React.useState<'all' | 'variance' | 'unmapped' | 'missing_source' | 'matched'>('all');
+
+  const formatA31Timestamp = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+  };
+
+  const saveA31Snapshot = (
+    sourceCard: string,
+    sectionEnabled?: boolean,
+    counts?: Record<string, number>
+  ) => {
+    const name = `A31 - ${sourceCard} - ${formatA31Timestamp()}`;
+    const countText = Object.entries(counts ?? {})
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(', ');
+    const description = `${sourceCard} | enabled=${sectionEnabled ?? 'n/a'}${countText ? ` | ${countText}` : ''}`;
+    saveSnapshot(name, description, { sourceCard, sectionEnabled, counts });
+    setA31Status({ type: 'success', message: `Saved snapshot: ${name}` });
+  };
+
+  const openA31Snapshots = () => {
+    setActiveTab('scenarios');
+    setScenariosFocus('snapshots');
+  };
+
+  const renderA31Actions = (
+    sourceCard: string,
+    sectionEnabled?: boolean,
+    counts?: Record<string, number>
+  ) => (
+    <div className="flex items-center gap-2">
+      <button
+        className="flex items-center gap-1 px-2 py-1 rounded bg-[rgba(59,130,246,0.12)] text-[#3b82f6] text-[10px]"
+        onClick={() => saveA31Snapshot(sourceCard, sectionEnabled, counts)}
+        title="Save current state as a Model Snapshot (A31)."
+      >
+        <Save size={10} />
+        Save Snapshot
+      </button>
+      <button
+        className="flex items-center gap-1 px-2 py-1 rounded bg-[rgba(16,185,129,0.12)] text-[#10b981] text-[10px]"
+        onClick={openA31Snapshots}
+        title="Open Scenarios and focus the Model Snapshots (A31) section."
+      >
+        <ArrowRight size={10} />
+        Open A31
+      </button>
+    </div>
+  );
 
   const parseRows = <T,>(rows: (string | number)[][], mapper: (row: Record<string, unknown>, index: number) => T | null): T[] => {
     if (rows.length < 2) return [];
@@ -726,6 +784,7 @@ export function EnhancementPanel() {
 
   return (
     <div className="space-y-4">
+      {renderImportStatus(a31Status)}
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -741,6 +800,9 @@ export function EnhancementPanel() {
                 {isPayTemplateLoading ? 'Preparing...' : 'Download Template'}
               </button>
               <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addPayRow} title="Add a new pay spine row."><Plus size={12} />Add Row</button>
+              {renderA31Actions('Pay Spine Configurator', baseline.paySpineConfig.enabled, {
+                paySpineRows: baseline.paySpineConfig.rows.length,
+              })}
             </div>
           </CardHeader>
           <label className="text-[11px] text-[#8ca0c0] flex items-center gap-2 mb-2">
@@ -770,6 +832,131 @@ export function EnhancementPanel() {
 
         <Card>
           <CardHeader>
+            <div className="flex items-center gap-1.5"><CardTitle>Workforce Funding Model</CardTitle><RichTooltip content="Model pay by post/funding source with pay mode controls." /></div>
+            <div className="flex items-center gap-2">
+              <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addWorkforce}><Plus size={12} />Add Post</button>
+              {renderA31Actions('Workforce Funding Model', baseline.workforceModel.enabled, {
+                workforcePosts: baseline.workforceModel.posts.length,
+              })}
+            </div>
+          </CardHeader>
+          <div className="space-y-2 text-[11px]">
+            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.workforceModel.enabled} onChange={(e) => setWorkforceModelEnabled(e.target.checked)} />Enable workforce model</label>
+            <div className="grid grid-cols-1 gap-1 px-1">
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Model Mode</p>
+                <RichTooltip content="Choose pay source: Pay Spine only, Workforce Posts only, or Hybrid (both combined)." />
+              </div>
+            </div>
+            <select className="input" value={baseline.workforceModel.mode} onChange={(e) => setWorkforceModelMode(e.target.value as 'pay_spine' | 'workforce_posts' | 'hybrid')}>
+              <option value="pay_spine">Pay Spine</option>
+              <option value="workforce_posts">Workforce Posts</option>
+              <option value="hybrid">Hybrid</option>
+            </select>
+            {baseline.workforceModel.mode === 'hybrid' && (
+              <div className="p-2 rounded border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] text-[#f59e0b] text-[10px]">
+                Hybrid mode combines Pay Spine and Workforce Posts. Avoid duplicating the same posts in both datasets.
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-2 px-1">
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">GF %</p>
+                <RichTooltip content="Annual pay award assumption (%) applied to general fund funded posts." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Grant %</p>
+                <RichTooltip content="Annual pay award assumption (%) applied to grant-funded posts." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Other %</p>
+                <RichTooltip content="Annual pay award assumption (%) for posts funded by other sources." />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.general_fund} onChange={(e) => updatePayAwardByFundingSource('general_fund', Number(e.target.value) || 0)} title="GF pay award %" />
+              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.grant} onChange={(e) => updatePayAwardByFundingSource('grant', Number(e.target.value) || 0)} title="Grant pay award %" />
+              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.other} onChange={(e) => updatePayAwardByFundingSource('other', Number(e.target.value) || 0)} title="Other funding pay award %" />
+            </div>
+            <div className="grid grid-cols-5 gap-2 px-1">
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Default pp</p>
+                <RichTooltip content="Sensitivity stress in percentage points (pp) for default pay group assumptions." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Teachers pp</p>
+                <RichTooltip content="Sensitivity stress in pp applied to teachers pay group assumptions." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">NJC pp</p>
+                <RichTooltip content="Sensitivity stress in pp applied to NJC pay group assumptions." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Senior pp</p>
+                <RichTooltip content="Sensitivity stress in pp applied to senior pay group assumptions." />
+              </div>
+              <div className="flex items-center gap-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Other pp</p>
+                <RichTooltip content="Sensitivity stress in pp applied to other pay group assumptions." />
+              </div>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.default} onChange={(e) => updatePayGroupSensitivity('default', Number(e.target.value) || 0)} title="Default group sensitivity (pp)" />
+              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.teachers} onChange={(e) => updatePayGroupSensitivity('teachers', Number(e.target.value) || 0)} title="Teachers group sensitivity (pp)" />
+              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.njc} onChange={(e) => updatePayGroupSensitivity('njc', Number(e.target.value) || 0)} title="NJC group sensitivity (pp)" />
+              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.senior} onChange={(e) => updatePayGroupSensitivity('senior', Number(e.target.value) || 0)} title="Senior group sensitivity (pp)" />
+              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.other} onChange={(e) => updatePayGroupSensitivity('other', Number(e.target.value) || 0)} title="Other group sensitivity (pp)" />
+            </div>
+            <div className="flex gap-2">
+              <button className="px-2 py-1 rounded bg-[rgba(59,130,246,0.12)] text-[#3b82f6] text-[10px]" onClick={() => {
+                updatePayGroupSensitivity('default', assumptions.expenditure.payGroupSensitivity.default + 1);
+                updatePayGroupSensitivity('teachers', assumptions.expenditure.payGroupSensitivity.teachers + 1);
+                updatePayGroupSensitivity('njc', assumptions.expenditure.payGroupSensitivity.njc + 1);
+                updatePayGroupSensitivity('senior', assumptions.expenditure.payGroupSensitivity.senior + 1);
+                updatePayGroupSensitivity('other', assumptions.expenditure.payGroupSensitivity.other + 1);
+              }}>All Groups +1pp</button>
+              <button className="px-2 py-1 rounded bg-[rgba(245,158,11,0.12)] text-[#f59e0b] text-[10px]" onClick={() => {
+                updatePayGroupSensitivity('default', 0);
+                updatePayGroupSensitivity('teachers', 0);
+                updatePayGroupSensitivity('njc', 0);
+                updatePayGroupSensitivity('senior', 0);
+                updatePayGroupSensitivity('other', 0);
+              }}>Reset Group Stress</button>
+            </div>
+            {baseline.workforceModel.posts.length > 0 && (
+              <div className="grid grid-cols-[120px_1fr_70px_90px_100px_100px_auto] gap-2 px-1">
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Post ID</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Service</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">FTE</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Funding</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Annual Cost</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Pay Group</p>
+                <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Action</p>
+              </div>
+            )}
+            {baseline.workforceModel.posts.map((p) => (
+              <div key={p.id} className="grid grid-cols-[120px_1fr_70px_90px_100px_100px_auto] gap-2">
+                <input className="input" value={p.postId} onChange={(e) => updateWorkforcePost(p.id, { postId: e.target.value })} />
+                <input className="input" value={p.service} onChange={(e) => updateWorkforcePost(p.id, { service: e.target.value })} />
+                <input className="input" type="number" value={p.fte} onChange={(e) => updateWorkforcePost(p.id, { fte: Number(e.target.value) || 0 })} />
+                <select className="input" value={p.fundingSource} onChange={(e) => updateWorkforcePost(p.id, { fundingSource: e.target.value as WorkforcePost['fundingSource'] })}>
+                  <option value="general_fund">GF</option><option value="grant">Grant</option><option value="other">Other</option>
+                </select>
+                <input className="input" type="number" value={p.annualCost} onChange={(e) => updateWorkforcePost(p.id, { annualCost: Number(e.target.value) || 0 })} />
+                <select className="input" value={p.payAssumptionGroup} onChange={(e) => updateWorkforcePost(p.id, { payAssumptionGroup: e.target.value as WorkforcePost['payAssumptionGroup'] })}>
+                  <option value="default">Default</option>
+                  <option value="teachers">Teachers</option>
+                  <option value="njc">NJC</option>
+                  <option value="senior">Senior</option>
+                  <option value="other">Other</option>
+                </select>
+                <button className="text-[#ef4444]" onClick={() => removeWorkforcePost(p.id)}><Trash2 size={12} /></button>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <div className="flex items-center gap-1.5"><CardTitle>Contract Indexation Tracker</CardTitle><RichTooltip content="Captures contract-specific inflation clauses and uplift exposure." /></div>
             <div className="flex items-center gap-2">
               <label className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.3)] text-[#10b981] text-[11px] font-semibold cursor-pointer hover:bg-[rgba(16,185,129,0.2)] transition-colors" title="Import contracts from CSV or Excel.">
@@ -782,6 +969,9 @@ export function EnhancementPanel() {
                 {isContractTemplateLoading ? 'Preparing...' : 'Download Template'}
               </button>
               <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addContract} title="Add a major indexed contract line."><Plus size={12} />Add Contract</button>
+              {renderA31Actions('Contract Indexation Tracker', baseline.contractIndexationTracker.enabled, {
+                contracts: baseline.contractIndexationTracker.contracts.length,
+              })}
             </div>
           </CardHeader>
           <label className="text-[11px] text-[#8ca0c0] flex items-center gap-2 mb-2">
@@ -847,6 +1037,9 @@ export function EnhancementPanel() {
                 {isI2sTemplateLoading ? 'Preparing...' : 'Download Template'}
               </button>
               <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addI2S} title="Add an invest-to-save proposal."><Plus size={12} />Add Proposal</button>
+              {renderA31Actions('Invest-to-Save Modelling', baseline.investToSave.enabled, {
+                proposals: baseline.investToSave.proposals.length,
+              })}
             </div>
           </CardHeader>
           <label className="text-[11px] text-[#8ca0c0] flex items-center gap-2 mb-2">
@@ -894,6 +1087,9 @@ export function EnhancementPanel() {
                 {isIncomeTemplateLoading ? 'Preparing...' : 'Download Template'}
               </button>
               <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addIncome} title="Add an income line."><Plus size={12} />Add Line</button>
+              {renderA31Actions('Income Generation Workbook', baseline.incomeGenerationWorkbook.enabled, {
+                incomeLines: baseline.incomeGenerationWorkbook.lines.length,
+              })}
             </div>
           </CardHeader>
           <label className="text-[11px] text-[#8ca0c0] flex items-center gap-2 mb-2">
@@ -924,151 +1120,6 @@ export function EnhancementPanel() {
             ))}
           </div>
         </Card>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardHeader><div className="flex items-center gap-1.5"><CardTitle>Reserves Methodology</CardTitle><RichTooltip content="Selects how minimum reserves threshold is set for resilience checks." /></div></CardHeader>
-          <div className="space-y-2 text-[11px]">
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Method</p>
-              <select className="input" value={baseline.reservesAdequacyMethodology.method} onChange={(e) => updateReservesAdequacyMethodology({ method: e.target.value as ReservesAdequacyMethod })}>
-                <option value="fixed">Fixed minimum (£)</option>
-                <option value="pct_of_net_budget">% of net budget</option>
-                <option value="risk_based">Risk-based model</option>
-              </select>
-            </div>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Fixed Minimum Threshold (£k)</p>
-              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.fixedMinimum} onChange={(e) => updateReservesAdequacyMethodology({ fixedMinimum: Number(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Threshold as % of Net Budget</p>
-              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.pctOfNetBudget} onChange={(e) => updateReservesAdequacyMethodology({ pctOfNetBudget: Number(e.target.value) || 0 })} />
-            </div>
-            <p className="text-[10px] text-[#8ca0c0]">Effective threshold: <span className="mono text-[#f0f4ff]">{fmtK(result.effectiveMinimumReservesThreshold)}</span></p>
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader><div className="flex items-center gap-1.5"><CardTitle>Treasury Indicators</CardTitle><RichTooltip content="Tracks prudential limits and flags potential treasury breaches." /></div></CardHeader>
-          <div className="space-y-2 text-[11px]">
-            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.treasuryIndicators.enabled} onChange={(e) => updateTreasuryIndicators({ enabled: e.target.checked })} />Enable indicators</label>
-            <div className="grid grid-cols-[1fr_130px] gap-2 px-1">
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Indicator</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
-            </div>
-            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
-              <p className="text-[10px] text-[#8ca0c0]">Authorised Limit</p>
-              <input className="input text-right" type="number" value={baseline.treasuryIndicators.authorisedLimit} onChange={(e) => updateTreasuryIndicators({ authorisedLimit: Number(e.target.value) || 0 })} aria-label="Authorised limit in thousands of pounds" />
-            </div>
-            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
-              <p className="text-[10px] text-[#8ca0c0]">Operational Boundary</p>
-              <input className="input text-right" type="number" value={baseline.treasuryIndicators.operationalBoundary} onChange={(e) => updateTreasuryIndicators({ operationalBoundary: Number(e.target.value) || 0 })} aria-label="Operational boundary in thousands of pounds" />
-            </div>
-            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
-              <p className="text-[10px] text-[#8ca0c0]">Net Financing Need</p>
-              <input className="input text-right" type="number" value={baseline.treasuryIndicators.netFinancingNeed} onChange={(e) => updateTreasuryIndicators({ netFinancingNeed: Number(e.target.value) || 0 })} aria-label="Net financing need in thousands of pounds" />
-            </div>
-            {result.treasuryBreaches.length > 0 && (
-              <div className="text-[10px] text-[#ef4444] space-y-1">
-                {result.treasuryBreaches.map((b) => <p key={b} className="flex items-center gap-1"><AlertTriangle size={10} />{b}</p>)}
-              </div>
-            )}
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader><div className="flex items-center gap-1.5"><CardTitle>MRP Calculator</CardTitle><RichTooltip content="Applies selected MRP policy to calculate annual revenue charges." /></div></CardHeader>
-          <div className="space-y-2 text-[11px]">
-            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.mrpCalculator.enabled} onChange={(e) => updateMrpCalculator({ enabled: e.target.checked })} />Enable MRP</label>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">MRP Policy</p>
-              <select className="input" value={baseline.mrpCalculator.policy} onChange={(e) => updateMrpCalculator({ policy: e.target.value as MrpPolicy })}>
-                <option value="asset-life">Asset life</option>
-                <option value="annuity">Annuity</option>
-                <option value="straight-line">Straight-line</option>
-              </select>
-            </div>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Base Borrowing (£k)</p>
-              <input className="input" type="number" value={baseline.mrpCalculator.baseBorrowing} onChange={(e) => updateMrpCalculator({ baseBorrowing: Number(e.target.value) || 0 })} />
-            </div>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Asset Life (Years)</p>
-              <input className="input" type="number" value={baseline.mrpCalculator.assetLifeYears} onChange={(e) => updateMrpCalculator({ assetLifeYears: Number(e.target.value) || 1 })} />
-            </div>
-            <div>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Annuity Rate (%)</p>
-              <input className="input" type="number" value={baseline.mrpCalculator.annuityRate} onChange={(e) => updateMrpCalculator({ annuityRate: Number(e.target.value) || 0 })} />
-            </div>
-            <p className="text-[10px] text-[#8ca0c0]">Y1–Y5: {result.mrpCharges.map((v) => fmtK(v)).join(' · ')}</p>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-1.5"><CardTitle>Workforce Funding Model</CardTitle><RichTooltip content="Model pay by post/funding source with pay mode controls." /></div>
-            <button className="text-[11px] text-[#3b82f6] flex items-center gap-1" onClick={addWorkforce}><Plus size={12} />Add Post</button>
-          </CardHeader>
-          <div className="space-y-2 text-[11px]">
-            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.workforceModel.enabled} onChange={(e) => setWorkforceModelEnabled(e.target.checked)} />Enable workforce model</label>
-            <select className="input" value={baseline.workforceModel.mode} onChange={(e) => setWorkforceModelMode(e.target.value as 'pay_spine' | 'workforce_posts' | 'hybrid')}>
-              <option value="pay_spine">Pay Spine</option>
-              <option value="workforce_posts">Workforce Posts</option>
-              <option value="hybrid">Hybrid</option>
-            </select>
-            <div className="grid grid-cols-3 gap-2">
-              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.general_fund} onChange={(e) => updatePayAwardByFundingSource('general_fund', Number(e.target.value) || 0)} title="GF pay award %" />
-              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.grant} onChange={(e) => updatePayAwardByFundingSource('grant', Number(e.target.value) || 0)} title="Grant pay award %" />
-              <input className="input" type="number" value={assumptions.expenditure.payAwardByFundingSource.other} onChange={(e) => updatePayAwardByFundingSource('other', Number(e.target.value) || 0)} title="Other funding pay award %" />
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.default} onChange={(e) => updatePayGroupSensitivity('default', Number(e.target.value) || 0)} title="Default group sensitivity (pp)" />
-              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.teachers} onChange={(e) => updatePayGroupSensitivity('teachers', Number(e.target.value) || 0)} title="Teachers group sensitivity (pp)" />
-              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.njc} onChange={(e) => updatePayGroupSensitivity('njc', Number(e.target.value) || 0)} title="NJC group sensitivity (pp)" />
-              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.senior} onChange={(e) => updatePayGroupSensitivity('senior', Number(e.target.value) || 0)} title="Senior group sensitivity (pp)" />
-              <input className="input" type="number" value={assumptions.expenditure.payGroupSensitivity.other} onChange={(e) => updatePayGroupSensitivity('other', Number(e.target.value) || 0)} title="Other group sensitivity (pp)" />
-            </div>
-            <div className="flex gap-2">
-              <button className="px-2 py-1 rounded bg-[rgba(59,130,246,0.12)] text-[#3b82f6] text-[10px]" onClick={() => {
-                updatePayGroupSensitivity('default', assumptions.expenditure.payGroupSensitivity.default + 1);
-                updatePayGroupSensitivity('teachers', assumptions.expenditure.payGroupSensitivity.teachers + 1);
-                updatePayGroupSensitivity('njc', assumptions.expenditure.payGroupSensitivity.njc + 1);
-                updatePayGroupSensitivity('senior', assumptions.expenditure.payGroupSensitivity.senior + 1);
-                updatePayGroupSensitivity('other', assumptions.expenditure.payGroupSensitivity.other + 1);
-              }}>All Groups +1pp</button>
-              <button className="px-2 py-1 rounded bg-[rgba(245,158,11,0.12)] text-[#f59e0b] text-[10px]" onClick={() => {
-                updatePayGroupSensitivity('default', 0);
-                updatePayGroupSensitivity('teachers', 0);
-                updatePayGroupSensitivity('njc', 0);
-                updatePayGroupSensitivity('senior', 0);
-                updatePayGroupSensitivity('other', 0);
-              }}>Reset Group Stress</button>
-            </div>
-            {baseline.workforceModel.posts.map((p) => (
-              <div key={p.id} className="grid grid-cols-[120px_1fr_70px_90px_100px_100px_auto] gap-2">
-                <input className="input" value={p.postId} onChange={(e) => updateWorkforcePost(p.id, { postId: e.target.value })} />
-                <input className="input" value={p.service} onChange={(e) => updateWorkforcePost(p.id, { service: e.target.value })} />
-                <input className="input" type="number" value={p.fte} onChange={(e) => updateWorkforcePost(p.id, { fte: Number(e.target.value) || 0 })} />
-                <select className="input" value={p.fundingSource} onChange={(e) => updateWorkforcePost(p.id, { fundingSource: e.target.value as WorkforcePost['fundingSource'] })}>
-                  <option value="general_fund">GF</option><option value="grant">Grant</option><option value="other">Other</option>
-                </select>
-                <input className="input" type="number" value={p.annualCost} onChange={(e) => updateWorkforcePost(p.id, { annualCost: Number(e.target.value) || 0 })} />
-                <select className="input" value={p.payAssumptionGroup} onChange={(e) => updateWorkforcePost(p.id, { payAssumptionGroup: e.target.value as WorkforcePost['payAssumptionGroup'] })}>
-                  <option value="default">Default</option>
-                  <option value="teachers">Teachers</option>
-                  <option value="njc">NJC</option>
-                  <option value="senior">Senior</option>
-                  <option value="other">Other</option>
-                </select>
-                <button className="text-[#ef4444]" onClick={() => removeWorkforcePost(p.id)}><Trash2 size={12} /></button>
-              </div>
-            ))}
-          </div>
-        </Card>
 
         <Card>
           <CardHeader>
@@ -1078,6 +1129,10 @@ export function EnhancementPanel() {
               <button className="text-[11px] text-[#f59e0b] flex items-center gap-1" onClick={addAdjustment}><Plus size={12} />Override</button>
               <button onClick={() => void handleGrowthTemplateDownload()} disabled={isGrowthTemplateLoading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"><Download size={11} />{isGrowthTemplateLoading ? 'Preparing...' : 'Growth Template'}</button>
               <button onClick={() => void handleOverrideTemplateDownload()} disabled={isOverrideTemplateLoading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[rgba(245,158,11,0.15)] border border-[rgba(245,158,11,0.3)] text-[#f59e0b] text-[11px] font-semibold hover:bg-[rgba(245,158,11,0.25)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"><Download size={11} />{isOverrideTemplateLoading ? 'Preparing...' : 'Override Template'}</button>
+              {renderA31Actions('Growth & Manual Overrides', undefined, {
+                growthProposals: baseline.growthProposals.length,
+                manualAdjustments: baseline.manualAdjustments.length,
+              })}
             </div>
           </CardHeader>
           <div className="space-y-2 text-[11px]">
@@ -1125,6 +1180,96 @@ export function EnhancementPanel() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-1.5"><CardTitle>Reserves Methodology</CardTitle><RichTooltip content="Selects how minimum reserves threshold is set for resilience checks." /></div>
+            {renderA31Actions('Reserves Methodology')}
+          </CardHeader>
+          <div className="space-y-2 text-[11px]">
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Method</p>
+              <select className="input" value={baseline.reservesAdequacyMethodology.method} onChange={(e) => updateReservesAdequacyMethodology({ method: e.target.value as ReservesAdequacyMethod })}>
+                <option value="fixed">Fixed minimum (£)</option>
+                <option value="pct_of_net_budget">% of net budget</option>
+                <option value="risk_based">Risk-based model</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Fixed Minimum Threshold (£k)</p>
+              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.fixedMinimum} onChange={(e) => updateReservesAdequacyMethodology({ fixedMinimum: Number(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Threshold as % of Net Budget</p>
+              <input className="input" type="number" value={baseline.reservesAdequacyMethodology.pctOfNetBudget} onChange={(e) => updateReservesAdequacyMethodology({ pctOfNetBudget: Number(e.target.value) || 0 })} />
+            </div>
+            <p className="text-[10px] text-[#8ca0c0]">Effective threshold: <span className="mono text-[#f0f4ff]">{fmtK(result.effectiveMinimumReservesThreshold)}</span></p>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-1.5"><CardTitle>Treasury Indicators</CardTitle><RichTooltip content="Tracks prudential limits and flags potential treasury breaches." /></div>
+            {renderA31Actions('Treasury Indicators', baseline.treasuryIndicators.enabled)}
+          </CardHeader>
+          <div className="space-y-2 text-[11px]">
+            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.treasuryIndicators.enabled} onChange={(e) => updateTreasuryIndicators({ enabled: e.target.checked })} />Enable indicators</label>
+            <div className="grid grid-cols-[1fr_130px] gap-2 px-1">
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Indicator</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Authorised Limit</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.authorisedLimit} onChange={(e) => updateTreasuryIndicators({ authorisedLimit: Number(e.target.value) || 0 })} aria-label="Authorised limit in thousands of pounds" />
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Operational Boundary</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.operationalBoundary} onChange={(e) => updateTreasuryIndicators({ operationalBoundary: Number(e.target.value) || 0 })} aria-label="Operational boundary in thousands of pounds" />
+            </div>
+            <div className="grid grid-cols-[1fr_130px] gap-2 items-center">
+              <p className="text-[10px] text-[#8ca0c0]">Net Financing Need</p>
+              <input className="input text-right" type="number" value={baseline.treasuryIndicators.netFinancingNeed} onChange={(e) => updateTreasuryIndicators({ netFinancingNeed: Number(e.target.value) || 0 })} aria-label="Net financing need in thousands of pounds" />
+            </div>
+            {result.treasuryBreaches.length > 0 && (
+              <div className="text-[10px] text-[#ef4444] space-y-1">
+                {result.treasuryBreaches.map((b) => <p key={b} className="flex items-center gap-1"><AlertTriangle size={10} />{b}</p>)}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-1.5"><CardTitle>MRP Calculator</CardTitle><RichTooltip content="Applies selected MRP policy to calculate annual revenue charges." /></div>
+            {renderA31Actions('MRP Calculator', baseline.mrpCalculator.enabled)}
+          </CardHeader>
+          <div className="space-y-2 text-[11px]">
+            <label className="flex items-center gap-2 text-[#8ca0c0]"><input type="checkbox" checked={baseline.mrpCalculator.enabled} onChange={(e) => updateMrpCalculator({ enabled: e.target.checked })} />Enable MRP</label>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">MRP Policy</p>
+              <select className="input" value={baseline.mrpCalculator.policy} onChange={(e) => updateMrpCalculator({ policy: e.target.value as MrpPolicy })}>
+                <option value="asset-life">Asset life</option>
+                <option value="annuity">Annuity</option>
+                <option value="straight-line">Straight-line</option>
+              </select>
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Base Borrowing (£k)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.baseBorrowing} onChange={(e) => updateMrpCalculator({ baseBorrowing: Number(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Asset Life (Years)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.assetLifeYears} onChange={(e) => updateMrpCalculator({ assetLifeYears: Number(e.target.value) || 1 })} />
+            </div>
+            <div>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest mb-1">Annuity Rate (%)</p>
+              <input className="input" type="number" value={baseline.mrpCalculator.annuityRate} onChange={(e) => updateMrpCalculator({ annuityRate: Number(e.target.value) || 0 })} />
+            </div>
+            <p className="text-[10px] text-[#8ca0c0]">Y1–Y5: {result.mrpCharges.map((v) => fmtK(v)).join(' · ')}</p>
+          </div>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5"><CardTitle>Overlay Import & Reconciliation</CardTitle><RichTooltip content="Non-destructive source overlay and model vs source variance outputs." /></div>
@@ -1135,6 +1280,11 @@ export function EnhancementPanel() {
               <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleOverlayImportFile} />
             </label>
             <button className="px-3 py-1.5 rounded bg-[rgba(239,68,68,0.12)] text-[#ef4444] text-[11px]" onClick={() => clearOverlayImports()}>Clear Overlays</button>
+            {renderA31Actions('Overlay Import & Reconciliation', undefined, {
+              mappingProfiles: baseline.importMappingProfiles.length,
+              overlayImports: baseline.overlayImports.length,
+              reconciliationRows: result.reconciliationRows.length,
+            })}
           </div>
         </CardHeader>
         <div className="space-y-2 text-[11px]">
@@ -1205,7 +1355,10 @@ export function EnhancementPanel() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5"><CardTitle>Named Stress Tests</CardTitle><RichTooltip content="Applies adverse shocks quickly to test downside resilience and governance readiness." /></div>
-          <Zap size={14} className="text-[#f59e0b]" />
+          <div className="flex items-center gap-2">
+            <Zap size={14} className="text-[#f59e0b]" />
+            {renderA31Actions('Named Stress Tests')}
+          </div>
         </CardHeader>
         <div className="grid grid-cols-4 gap-2">
           <button className="px-3 py-2 rounded bg-[rgba(59,130,246,0.12)] text-[#3b82f6] text-[11px] font-semibold" onClick={() => applyNamedStressTest('pay_settlement_plus2')} title="Increase pay award assumption by +2 percentage points.">

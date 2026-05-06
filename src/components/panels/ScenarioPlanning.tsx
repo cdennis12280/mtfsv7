@@ -10,7 +10,8 @@ import { Plus, Trash2, Download, TrendingUp, TrendingDown, Target, Upload, Save,
 import { RichTooltip } from '../ui/RichTooltip';
 import { exportDecisionPackPdf } from '../../utils/decisionPackPdf';
 import { downloadSnapshotTemplatePack } from '../../utils/snapshotTemplatePack';
-import { runCalculations } from '../../engine/calculations';
+import { DEFAULT_ASSUMPTIONS, runCalculations } from '../../engine/calculations';
+import type { Assumptions, Scenario } from '../../types/financial';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -32,6 +33,36 @@ const typeBadge: Record<string, 'blue' | 'green' | 'red' | 'purple'> = {
   custom: 'purple',
 };
 
+function normalizeAssumptions(input: Partial<Assumptions> | Assumptions): Assumptions {
+  const source = (input ?? {}) as Partial<Assumptions>;
+  const expenditure = (source.expenditure ?? {}) as Partial<Assumptions['expenditure']>;
+  return {
+    ...DEFAULT_ASSUMPTIONS,
+    ...source,
+    funding: { ...DEFAULT_ASSUMPTIONS.funding, ...(source.funding ?? {}) },
+    expenditure: {
+      ...DEFAULT_ASSUMPTIONS.expenditure,
+      ...expenditure,
+      payAwardByFundingSource: {
+        ...DEFAULT_ASSUMPTIONS.expenditure.payAwardByFundingSource,
+        ...(expenditure.payAwardByFundingSource ?? {}),
+      },
+      payGroupSensitivity: {
+        ...DEFAULT_ASSUMPTIONS.expenditure.payGroupSensitivity,
+        ...(expenditure.payGroupSensitivity ?? {}),
+      },
+    },
+    policy: { ...DEFAULT_ASSUMPTIONS.policy, ...(source.policy ?? {}) },
+    advanced: { ...DEFAULT_ASSUMPTIONS.advanced, ...(source.advanced ?? {}) },
+  };
+}
+
+function resolveScenarioType(type: unknown): Scenario['type'] {
+  return type === 'base' || type === 'optimistic' || type === 'pessimistic' || type === 'custom'
+    ? type
+    : 'custom';
+}
+
 export function ScenarioPlanning() {
   const {
     scenarios,
@@ -51,6 +82,8 @@ export function ScenarioPlanning() {
     exportSnapshotAsXlsx,
     importSnapshotFromXlsxFile,
     authorityConfig,
+    scenariosFocus,
+    setScenariosFocus,
   } = useMTFSStore();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [scenarioName, setScenarioName] = useState('');
@@ -71,10 +104,23 @@ export function ScenarioPlanning() {
   });
   const [diffModeEnabled, setDiffModeEnabled] = useState(false);
   const [diffTarget, setDiffTarget] = useState<string>('scenario:');
-  const resolvedScenarios = scenarios.map((s) => ({
-    ...s,
-    result: runCalculations(s.assumptions, baseline, savingsProposals),
-  }));
+  const snapshotsSectionRef = React.useRef<HTMLDivElement | null>(null);
+  const resolvedScenarios = scenarios.map((s, idx) => {
+    const assumptionsNormalized = normalizeAssumptions((s.assumptions ?? {}) as Partial<Assumptions>);
+    const safeType = resolveScenarioType(s.type);
+    const safeColor = typeof s.color === 'string' && s.color.trim() ? s.color : '#3b82f6';
+    const safeName = typeof s.name === 'string' && s.name.trim() ? s.name : `Scenario ${idx + 1}`;
+    const safeCreatedAt = typeof s.createdAt === 'string' && s.createdAt.trim() ? s.createdAt : new Date().toISOString();
+    return {
+      ...s,
+      type: safeType,
+      color: safeColor,
+      name: safeName,
+      createdAt: safeCreatedAt,
+      assumptions: assumptionsNormalized,
+      result: runCalculations(assumptionsNormalized, baseline, savingsProposals),
+    };
+  });
 
   const decisionOptions = [
     {
@@ -368,6 +414,13 @@ export function ScenarioPlanning() {
     }).filter((r) => r.changed)
     : [];
 
+  React.useEffect(() => {
+    if (scenariosFocus !== 'snapshots') return;
+    snapshotsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const timer = window.setTimeout(() => setScenariosFocus('none'), 600);
+    return () => window.clearTimeout(timer);
+  }, [scenariosFocus, setScenariosFocus]);
+
   return (
     <div className="space-y-4">
       {/* Header actions */}
@@ -449,6 +502,7 @@ export function ScenarioPlanning() {
         </Card>
       )}
 
+      <div ref={snapshotsSectionRef}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5">
@@ -518,6 +572,7 @@ export function ScenarioPlanning() {
           ))}
         </div>
       </Card>
+      </div>
 
       <Card>
         <CardHeader>

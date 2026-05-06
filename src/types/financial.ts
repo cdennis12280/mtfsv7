@@ -572,6 +572,12 @@ export interface ModelSnapshot {
   };
 }
 
+export interface SnapshotSaveContext {
+  sourceCard: string;
+  sectionEnabled?: boolean;
+  counts?: Record<string, number>;
+}
+
 export interface MonteCarloSummary {
   iterations: number;
   deficitProbability: number; // %
