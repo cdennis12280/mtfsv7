@@ -87,6 +87,12 @@ interface MTFSStore {
   densityMode: 'comfortable' | 'compact' | 'presentation';
   snapshots: ModelSnapshot[];
   peerBenchmark: PeerBenchmarkConfig;
+  decisionWeights: {
+    affordability: number;
+    risk: number;
+    reserves: number;
+    deliverability: number;
+  };
   cfoDemo: {
     enabled: boolean;
     step: CfoDemoStep;
@@ -216,9 +222,9 @@ interface MTFSStore {
   loadSnapshot: (id: string) => void;
   deleteSnapshot: (id: string) => void;
   exportSnapshotAsJson: (id: string) => string | null;
-  importSnapshotFromJson: (jsonText: string) => { success: boolean; message: string };
+  importSnapshotFromJson: (jsonText: string) => { success: boolean; message: string; snapshotId?: string; snapshotName?: string };
   exportSnapshotAsXlsx: (id: string) => Promise<Blob | null>;
-  importSnapshotFromXlsxFile: (file: File) => Promise<{ success: boolean; message: string }>;
+  importSnapshotFromXlsxFile: (file: File) => Promise<{ success: boolean; message: string; snapshotId?: string; snapshotName?: string }>;
   setPeerBenchmark: (updates: Partial<PeerBenchmarkConfig>) => void;
   resetToDefaults: () => void;
   applyPreset: (preset: 'optimistic' | 'pessimistic') => void;
@@ -229,6 +235,7 @@ interface MTFSStore {
   noteGovernanceExport: (kind: 'memberBrief' | 's151Pack' | 'dataCsv') => void;
   setCurrentWorkingSet: (workingSet: MTFSStore['workflowState']['currentWorkingSet']) => void;
   setSelectedDecisionOption: (option: MTFSStore['workflowState']['selectedDecisionOption']) => void;
+  setDecisionWeights: (weights: Partial<MTFSStore['decisionWeights']>) => void;
   runEndToEndValidation: () => { blockers: string[]; warnings: string[] };
   createDefaultScenarioPack: () => void;
   createScenarioFromGoal: (goal: ScenarioGoal) => void;
@@ -510,6 +517,12 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
   densityMode: 'comfortable',
   snapshots: loadSnapshotsFromStorage(),
   peerBenchmark: DEFAULT_PEER_BENCHMARK,
+  decisionWeights: {
+    affordability: 40,
+    risk: 30,
+    reserves: 20,
+    deliverability: 10,
+  },
   cfoDemo: {
     enabled: false,
     step: 'position',
@@ -1536,7 +1549,12 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       const snapshots = [snapshot, ...s.snapshots.filter((x) => x.id !== snapshot.id)];
       persistSnapshots(snapshots);
       set({ snapshots });
-      return { success: true, message: `Imported snapshot: ${snapshot.name}` };
+      return {
+        success: true,
+        message: 'Snapshot imported to library. Load it before locking if you want it to drive the current model.',
+        snapshotId: snapshot.id,
+        snapshotName: snapshot.name,
+      };
     } catch {
       return { success: false, message: 'Could not parse snapshot JSON' };
     }
@@ -1560,7 +1578,12 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     const snapshots = [snapshot, ...s.snapshots.filter((x) => x.id !== snapshot.id)];
     persistSnapshots(snapshots);
     set({ snapshots });
-    return { success: true, message: `Imported snapshot from workbook: ${snapshot.name}` };
+    return {
+      success: true,
+      message: `Snapshot imported to library. Load it before locking if you want it to drive the current model.`,
+      snapshotId: snapshot.id,
+      snapshotName: snapshot.name,
+    };
   },
   setPeerBenchmark: (updates) =>
     set((s) => ({ peerBenchmark: { ...s.peerBenchmark, ...updates } })),
@@ -1653,6 +1676,8 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     set((s) => ({ workflowState: { ...s.workflowState, currentWorkingSet: workingSet } })),
   setSelectedDecisionOption: (option) =>
     set((s) => ({ workflowState: { ...s.workflowState, selectedDecisionOption: option } })),
+  setDecisionWeights: (weights) =>
+    set((s) => ({ decisionWeights: { ...s.decisionWeights, ...weights } })),
   runEndToEndValidation: () => {
     const s = get();
     const summary = validateModel({

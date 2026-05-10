@@ -137,6 +137,8 @@ export function ScenarioPlanning() {
     setCurrentWorkingSet,
     meetingMode,
     setMeetingMode,
+    decisionWeights,
+    setDecisionWeights,
   } = useMTFSStore();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [scenarioName, setScenarioName] = useState('');
@@ -150,16 +152,11 @@ export function ScenarioPlanning() {
   const [decisionA, setDecisionA] = useState('current');
   const [decisionB, setDecisionB] = useState('');
   const [decisionC, setDecisionC] = useState('');
-  const [decisionWeights, setDecisionWeights] = useState({
-    affordability: 40,
-    risk: 30,
-    reserves: 20,
-    deliverability: 10,
-  });
   const [diffModeEnabled, setDiffModeEnabled] = useState(false);
   const [diffTarget, setDiffTarget] = useState<string>('scenario:');
   const [wizardGoal, setWizardGoal] = useState<ScenarioGoal>('balance_gap');
   const [whatIf, setWhatIf] = useState({ pay: 0, grant: 0, savings: 0 });
+  const [showAdvancedComparison, setShowAdvancedComparison] = useState(false);
   const snapshotsSectionRef = React.useRef<HTMLDivElement | null>(null);
   const resolvedScenarios = React.useMemo(() => scenarios.map((s, idx) => {
     const assumptionsNormalized = normalizeAssumptions((s.assumptions ?? {}) as Partial<Assumptions>);
@@ -256,14 +253,19 @@ export function ScenarioPlanning() {
     URL.revokeObjectURL(url);
   };
 
-  const handleImportSnapshotFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportSnapshotFile = async (e: React.ChangeEvent<HTMLInputElement>, loadAfterImport = false) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     const imported = ext === 'xlsx' || ext === 'xls'
       ? await importSnapshotFromXlsxFile(file)
       : importSnapshotFromJson(await file.text());
-    setSnapshotMessage(imported.message);
+    if (loadAfterImport && imported.success && imported.snapshotId) {
+      loadSnapshot(imported.snapshotId);
+      setSnapshotMessage(`Imported and loaded snapshot: ${imported.snapshotName ?? file.name}`);
+    } else {
+      setSnapshotMessage(imported.message);
+    }
     e.target.value = '';
   };
 
@@ -380,7 +382,9 @@ export function ScenarioPlanning() {
     })()
     : [];
 
-  const firstNonCurrentKey = decisionOptions.find((o) => o.key !== 'current')?.key ?? 'current';
+  const nonCurrentDecisionKeys = decisionOptions.filter((o) => o.key !== 'current').map((o) => o.key);
+  const firstNonCurrentKey = nonCurrentDecisionKeys[0] ?? 'current';
+  const secondNonCurrentKey = nonCurrentDecisionKeys[1] ?? firstNonCurrentKey;
   const optionKeys = React.useMemo(() => new Set(decisionOptions.map((o) => o.key)), [decisionOptions]);
   const pickDecision = (key: string, fallbackKey: string) =>
     decisionOptions.find((o) => o.key === key)
@@ -388,13 +392,13 @@ export function ScenarioPlanning() {
     ?? decisionOptions[0];
   const optionA = pickDecision(decisionA, 'current');
   const optionB = pickDecision(decisionB || firstNonCurrentKey, firstNonCurrentKey);
-  const optionC = pickDecision(decisionC || firstNonCurrentKey, firstNonCurrentKey);
+  const optionC = pickDecision(decisionC || secondNonCurrentKey, secondNonCurrentKey);
 
   React.useEffect(() => {
     if (!optionKeys.has(decisionA)) setDecisionA('current');
     if (!decisionB || !optionKeys.has(decisionB)) setDecisionB(firstNonCurrentKey);
-    if (!decisionC || !optionKeys.has(decisionC)) setDecisionC(firstNonCurrentKey);
-  }, [decisionA, decisionB, decisionC, optionKeys, firstNonCurrentKey]);
+    if (!decisionC || !optionKeys.has(decisionC)) setDecisionC(secondNonCurrentKey);
+  }, [decisionA, decisionB, decisionC, optionKeys, firstNonCurrentKey, secondNonCurrentKey]);
 
   const decisionRows = [optionA, optionB, optionC].map((o, i) => ({
     label: `Option ${String.fromCharCode(65 + i)}`,
@@ -498,7 +502,14 @@ export function ScenarioPlanning() {
       assumptions: o.assumptions,
       result: o.result,
     }));
-    exportDecisionPackPdf({ authorityConfig, options: selected });
+    exportDecisionPackPdf({
+      authorityConfig,
+      options: selected,
+      recommendation: {
+        label: matrixRows[0]?.key,
+        weights: decisionWeights,
+      },
+    });
   };
 
   const downloadScenarioAudit = () => {
@@ -521,6 +532,31 @@ export function ScenarioPlanning() {
       return runCalculations(next, baseline, savingsProposals);
     })()
     : null;
+
+  const handleApplyPreviewToScenario = () => {
+    if (!compareScenario) return;
+    const previewAssumptions = normalizeAssumptions(compareScenario.assumptions);
+    previewAssumptions.expenditure.payAward = addToProfile(previewAssumptions.expenditure.payAward, whatIf.pay);
+    previewAssumptions.funding.grantVariation = addToProfile(previewAssumptions.funding.grantVariation, whatIf.grant);
+    previewAssumptions.expenditure.savingsDeliveryRisk = addToProfile(previewAssumptions.expenditure.savingsDeliveryRisk, whatIf.savings);
+    saveScenario(`${compareScenario.name} sensitivity preview`, 'Saved from non-destructive sensitivity preview.', 'custom');
+    const latest = useMTFSStore.getState().scenarios.at(-1);
+    if (latest) {
+      updateScenario(latest.id, {
+        assumptions: previewAssumptions,
+        description: 'Saved from non-destructive sensitivity preview.',
+        notes: {
+          rationale: `Sensitivity preview applied to ${compareScenario.name}.`,
+          assumptions: `Pay ${whatIf.pay}pp, grant ${whatIf.grant}pp, savings delivery ${whatIf.savings}pp.`,
+          tradeOffs: 'Preview converted into a saved scenario for decision comparison.',
+          risks: 'Review assumptions and delivery confidence before governance use.',
+          decisionRequired: 'Confirm whether this sensitivity should be included in the decision pack.',
+        },
+      }, 'Sensitivity preview saved as scenario');
+    }
+  };
+
+  const resetWhatIf = () => setWhatIf({ pay: 0, grant: 0, savings: 0 });
 
   const switchToMemberViewWithRecommended = () => {
     const top = matrixRows[0];
@@ -622,15 +658,33 @@ export function ScenarioPlanning() {
 
   return (
     <div id="scenario-executive-view" className="space-y-4 scroll-mt-32">
-      {/* Header actions */}
+      <div className="rounded-xl border border-[rgba(99,179,237,0.14)] bg-[rgba(10,17,32,0.72)] p-3">
+        <p className="text-[10px] uppercase tracking-widest text-[#4a6080]">Scenario workflow</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-4">
+          {[
+            ['1', 'Option Setup', 'Create or load options'],
+            ['2', 'Executive Comparison', 'Choose and rank options'],
+            ['3', 'Sensitivity Preview', 'Stress test without changing the model'],
+            ['4', 'Decision Pack Export', 'Export the selected 3-option pack'],
+          ].map(([step, title, copy]) => (
+            <div key={step} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-2.5">
+              <p className="text-[9px] text-[#60a5fa]">Step {step}</p>
+              <p className="text-[12px] font-semibold text-[#f0f4ff]">{title}</p>
+              <p className="mt-0.5 text-[10px] text-[#8ca0c0]">{copy}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <section aria-labelledby="scenario-option-setup" className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-1.5">
-            <h3 className="text-sm font-semibold text-[#f0f4ff]">Scenario Comparison</h3>
+            <h3 id="scenario-option-setup" className="text-sm font-semibold text-[#f0f4ff]">Option Setup</h3>
             <RichTooltip content="Store and compare alternative assumption sets to support option appraisal and member decisions." />
           </div>
           <p className="text-[11px] text-[#4a6080] mt-0.5">
-            Save the current assumption set as a named scenario, then compare side-by-side
+            Create option templates, save the current model, or load a snapshot before comparison.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -652,21 +706,6 @@ export function ScenarioPlanning() {
           </button>
         </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Committee Question Bookmarks</CardTitle>
-          <span className="text-[10px] text-[#4a6080]">Fast answers for member and S151 challenge</span>
-        </CardHeader>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-          {scenarioBookmarks.map((bookmark) => (
-            <div key={bookmark.label} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3">
-              <p className="text-[10px] font-semibold text-[#c8d7ee]">{bookmark.label}</p>
-              <p className="text-[11px] text-[#8ca0c0] mt-1">{bookmark.answer}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
 
       {/* Save dialog */}
       {showSaveDialog && (
@@ -743,10 +782,15 @@ export function ScenarioPlanning() {
               <Download size={11} className="inline mr-1" />
               {isSnapshotTemplateLoading ? 'Preparing Template...' : 'Download Template'}
             </button>
-            <label className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.15)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold cursor-pointer">
+            <label className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.15)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold cursor-pointer" title="Import a snapshot into the library without changing the current model.">
               <Upload size={11} className="inline mr-1" />
-              Import JSON/XLSX
-              <input type="file" accept=".json,.xlsx,.xls,application/json" className="hidden" onChange={handleImportSnapshotFile} />
+              Import only
+              <input type="file" accept=".json,.xlsx,.xls,application/json" className="hidden" onChange={(e) => void handleImportSnapshotFile(e, false)} />
+            </label>
+            <label className="px-3 py-1.5 rounded-lg bg-[rgba(245,158,11,0.13)] border border-[rgba(245,158,11,0.35)] text-[#f59e0b] text-[10px] font-semibold cursor-pointer" title="Import a snapshot and immediately load it into the current model.">
+              <Upload size={11} className="inline mr-1" />
+              Import and load snapshot
+              <input type="file" accept=".json,.xlsx,.xls,application/json" className="hidden" onChange={(e) => void handleImportSnapshotFile(e, true)} />
             </label>
           </div>
         </CardHeader>
@@ -801,16 +845,25 @@ export function ScenarioPlanning() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5">
-            <CardTitle>Scenario Dashboard</CardTitle>
-            <RichTooltip content="Leadership view of the current option set: best affordability, worst downside and recommended weighted option." />
+            <CardTitle>Option Builder</CardTitle>
+            <RichTooltip content="Create the option set, choose a goal-based scenario, and see the current option coverage before comparison." />
           </div>
-          <button
-            onClick={downloadScenarioAudit}
-            className="px-3 py-1.5 rounded-lg bg-[rgba(99,179,237,0.08)] border border-[rgba(99,179,237,0.22)] text-[#8ca0c0] text-[10px] font-semibold"
-          >
-            Export Scenario Audit CSV
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => createDefaultScenarioPack()}
+              className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold"
+            >
+              Create default option set
+            </button>
+            <button
+              onClick={downloadScenarioAudit}
+              className="px-3 py-1.5 rounded-lg bg-[rgba(99,179,237,0.08)] border border-[rgba(99,179,237,0.22)] text-[#8ca0c0] text-[10px] font-semibold"
+            >
+              Export Scenario Audit CSV
+            </button>
+          </div>
         </CardHeader>
+        <p className="mb-3 text-[11px] text-[#8ca0c0]">Use this panel to create options. Detailed comparison and export happen in the next steps.</p>
         <div className="grid gap-2 md:grid-cols-4">
           {[
             { label: 'Current', name: 'Live model', gap: result.totalGap, risk: result.overallRiskScore, color: '#60a5fa' },
@@ -833,21 +886,19 @@ export function ScenarioPlanning() {
             Recommended scenario: <span className="text-[#f0f4ff] font-semibold">{recommendedScenario.name}</span>. {scenarioNarrative(recommendedScenario, result)}
           </p>
         )}
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-1.5">
-            <CardTitle>Scenario Wizard</CardTitle>
-            <RichTooltip content="Create a governed scenario from a finance leadership goal without manually changing every assumption." />
+        <div className="mt-4 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.03)] p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold text-[#f0f4ff]">Build from goal</p>
+              <p className="text-[10px] text-[#8ca0c0]">Creates a saved scenario from a finance objective.</p>
+            </div>
+            <button
+              onClick={() => createScenarioFromGoal(wizardGoal)}
+              className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold"
+            >
+              Build from goal
+            </button>
           </div>
-          <button
-            onClick={() => createScenarioFromGoal(wizardGoal)}
-            className="px-3 py-1.5 rounded-lg bg-[rgba(16,185,129,0.12)] border border-[rgba(16,185,129,0.35)] text-[#10b981] text-[10px] font-semibold"
-          >
-            Build Scenario
-          </button>
-        </CardHeader>
         <div className="grid gap-2 md:grid-cols-4">
           {[
             { id: 'balance_gap' as const, label: 'Balance gap', copy: 'Increase recurring savings to close the modelled gap.' },
@@ -865,27 +916,28 @@ export function ScenarioPlanning() {
             </button>
           ))}
         </div>
+        </div>
       </Card>
+      </section>
 
+      <section aria-labelledby="scenario-executive-comparison" className="space-y-3">
+      <div>
+        <h3 id="scenario-executive-comparison" className="text-sm font-semibold text-[#f0f4ff]">Executive Comparison</h3>
+        <p className="mt-0.5 text-[11px] text-[#4a6080]">Select the three options you want finance leaders to compare and rank.</p>
+      </div>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5">
-            <CardTitle>Decision Pack (3 Options)</CardTitle>
+            <CardTitle>3-Option Decision Pack</CardTitle>
             <RichTooltip content="Compares three options with headline trade-offs for cabinet/full council decision papers." />
           </div>
-          <button
-            onClick={exportDecisionPack}
-            className="px-3 py-1.5 rounded-lg bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[10px] font-semibold"
-            title="Export a high-fidelity 3-option decision pack as PDF."
-          >
-            Export Decision Pack PDF
-          </button>
+          <span className="text-[10px] text-[#4a6080]">Export happens in the final step.</span>
         </CardHeader>
         <div className="grid grid-cols-3 gap-2 mb-3">
           {[
             { label: 'A', value: decisionA, setter: setDecisionA },
             { label: 'B', value: decisionB || firstNonCurrentKey, setter: setDecisionB },
-            { label: 'C', value: decisionC || firstNonCurrentKey, setter: setDecisionC },
+            { label: 'C', value: decisionC || secondNonCurrentKey, setter: setDecisionC },
           ].map(({ label, value, setter }) => (
             <div key={label as string}>
               <p className="text-[10px] text-[#4a6080] mb-1">Option {label}</p>
@@ -904,7 +956,7 @@ export function ScenarioPlanning() {
           ))}
         </div>
         <p className="text-[10px] text-[#4a6080] mb-3">
-          Options can be sourced from Current, Scenarios, or Snapshots.
+          Options can be sourced from Current, Scenarios, or Snapshots. PDF uses the selected options and weighted criteria shown below.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full premium-table text-[11px]">
@@ -956,7 +1008,7 @@ export function ScenarioPlanning() {
                     max={100}
                     step={5}
                     value={decisionWeights[w.key]}
-                    onChange={(e) => setDecisionWeights((prev) => ({ ...prev, [w.key]: Number(e.target.value) }))}
+                    onChange={(e) => setDecisionWeights({ [w.key]: Number(e.target.value) })}
                     className="w-full"
                   />
                   <span className="mono text-[10px] text-[#8ca0c0] w-8 text-right">{decisionWeights[w.key]}</span>
@@ -1009,9 +1061,118 @@ export function ScenarioPlanning() {
               </button>
             </div>
           )}
+          {resolvedScenarios.length > 0 && (
+            <details className="mt-3 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
+              <summary className="cursor-pointer text-[10px] font-semibold text-[#8ca0c0]">Finance Questions</summary>
+              <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+                {scenarioBookmarks.map((bookmark) => (
+                  <div key={bookmark.label} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3">
+                    <p className="text-[10px] font-semibold text-[#c8d7ee]">{bookmark.label}</p>
+                    <p className="mt-1 text-[11px] text-[#8ca0c0]">{bookmark.answer}</p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       </Card>
+      </section>
 
+      <section aria-labelledby="scenario-sensitivity-preview" className="space-y-3">
+        <div>
+          <h3 id="scenario-sensitivity-preview" className="text-sm font-semibold text-[#f0f4ff]">Sensitivity Preview</h3>
+          <p className="mt-0.5 text-[11px] text-[#4a6080]">Preview only - does not change the current model until saved.</p>
+        </div>
+        {compareScenario && whatIfResult ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-1.5">
+                <CardTitle>Sensitivity Preview</CardTitle>
+                <RichTooltip content="Temporarily stress the selected scenario without saving it." />
+              </div>
+              <span className="text-[10px] text-[#4a6080]">Selected: {compareScenario.name}</span>
+            </CardHeader>
+            <div className="grid gap-3 md:grid-cols-3">
+              {[
+                { key: 'pay' as const, label: 'Pay award shock', min: -2, max: 3, suffix: 'pp' },
+                { key: 'grant' as const, label: 'Grant variation shock', min: -5, max: 3, suffix: 'pp' },
+                { key: 'savings' as const, label: 'Savings delivery shock', min: -30, max: 15, suffix: 'pp' },
+              ].map((item) => (
+                <div key={item.key}>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-[#8ca0c0]">{item.label}</p>
+                    <span className="mono text-[10px] text-[#f0f4ff]">{whatIf[item.key]}{item.suffix}</span>
+                  </div>
+                  <input
+                    aria-label={item.label}
+                    type="range"
+                    min={item.min}
+                    max={item.max}
+                    step={0.5}
+                    value={whatIf[item.key]}
+                    onChange={(e) => setWhatIf((prev) => ({ ...prev, [item.key]: Number(e.target.value) }))}
+                    className="w-full"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-4">
+              {[
+                ['Preview gap', fmtK(whatIfResult.totalGap)],
+                ['Delta vs scenario', fmtK(whatIfResult.totalGap - compareScenario.result.totalGap)],
+                ['Y5 reserves', fmtK(whatIfResult.years[4]?.totalClosingReserves ?? 0)],
+                ['Risk score', `${whatIfResult.overallRiskScore.toFixed(0)}/100`],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-2">
+                  <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">{label}</p>
+                  <p className="mono mt-1 text-[12px] font-bold text-[#f0f4ff]">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button onClick={handleApplyPreviewToScenario} className="rounded-lg border border-[rgba(16,185,129,0.35)] bg-[rgba(16,185,129,0.12)] px-3 py-1.5 text-[10px] font-semibold text-[#10b981]">
+                Apply preview to new scenario
+              </button>
+              <button onClick={resetWhatIf} className="rounded-lg border border-[rgba(99,179,237,0.2)] bg-[rgba(99,179,237,0.06)] px-3 py-1.5 text-[10px] font-semibold text-[#8ca0c0]">
+                Reset preview
+              </button>
+              <span className="text-[10px] text-[#4a6080]">Unsaved preview values are excluded from exports.</span>
+            </div>
+          </Card>
+        ) : (
+          <Card>
+            <p className="text-[11px] text-[#4a6080]">Create or select a scenario to run a non-destructive sensitivity preview.</p>
+          </Card>
+        )}
+      </section>
+
+      <section aria-labelledby="scenario-decision-pack-export" className="space-y-3">
+        <div>
+          <h3 id="scenario-decision-pack-export" className="text-sm font-semibold text-[#f0f4ff]">Decision Pack Export</h3>
+          <p className="mt-0.5 text-[11px] text-[#4a6080]">Use the selected options and weights above when exporting the pack.</p>
+        </div>
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold text-[#f0f4ff]">Export selected 3-option pack</p>
+              <p className="mt-1 text-[10px] text-[#8ca0c0]">
+                PDF uses Option A/B/C and the weighted criteria from Executive Comparison. Unsaved sensitivity previews are excluded.
+              </p>
+            </div>
+            <button
+              onClick={exportDecisionPack}
+              className="rounded-lg border border-[rgba(59,130,246,0.3)] bg-[rgba(59,130,246,0.15)] px-3 py-1.5 text-[10px] font-semibold text-[#3b82f6]"
+              title="Export a high-fidelity 3-option decision pack as PDF."
+            >
+              Export Decision Pack PDF
+            </button>
+          </div>
+        </Card>
+      </section>
+
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3" open={showAdvancedComparison} onToggle={(e) => setShowAdvancedComparison(e.currentTarget.open)}>
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Advanced comparison detail</summary>
+        <div className="mt-3 space-y-4">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-1.5">
@@ -1164,54 +1325,6 @@ export function ScenarioPlanning() {
                     <p className="mono text-[13px] font-bold mt-1" style={{ color: item.delta >= 0 ? '#10b981' : '#ef4444' }}>
                       {fmtK(item.delta)}
                     </p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {compareScenario && whatIfResult && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-1.5">
-                  <CardTitle>Quick What-If Sensitivity</CardTitle>
-                  <RichTooltip content="Temporarily stress the selected scenario without saving it." />
-                </div>
-                <span className="text-[10px] text-[#4a6080]">Selected: {compareScenario.name}</span>
-              </CardHeader>
-              <div className="grid gap-3 md:grid-cols-3">
-                {[
-                  { key: 'pay' as const, label: 'Pay award shock', min: -2, max: 3, suffix: 'pp' },
-                  { key: 'grant' as const, label: 'Grant variation shock', min: -5, max: 3, suffix: 'pp' },
-                  { key: 'savings' as const, label: 'Savings delivery shock', min: -30, max: 15, suffix: 'pp' },
-                ].map((item) => (
-                  <div key={item.key}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] text-[#8ca0c0]">{item.label}</p>
-                      <span className="mono text-[10px] text-[#f0f4ff]">{whatIf[item.key]}{item.suffix}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={item.min}
-                      max={item.max}
-                      step={0.5}
-                      value={whatIf[item.key]}
-                      onChange={(e) => setWhatIf((prev) => ({ ...prev, [item.key]: Number(e.target.value) }))}
-                      className="w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-4">
-                {[
-                  ['What-if gap', fmtK(whatIfResult.totalGap)],
-                  ['Delta vs scenario', fmtK(whatIfResult.totalGap - compareScenario.result.totalGap)],
-                  ['Y5 reserves', fmtK(whatIfResult.years[4]?.totalClosingReserves ?? 0)],
-                  ['Risk score', `${whatIfResult.overallRiskScore.toFixed(0)}/100`],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-2">
-                    <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">{label}</p>
-                    <p className="mono mt-1 text-[12px] font-bold text-[#f0f4ff]">{value}</p>
                   </div>
                 ))}
               </div>
@@ -1503,6 +1616,8 @@ export function ScenarioPlanning() {
           </Card>
         </>
       )}
+        </div>
+      </details>
       <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
         <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Technical Drill-Down</summary>
         <div className="pt-3">

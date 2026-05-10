@@ -415,6 +415,10 @@ textarea:focus-visible {
   min-width: 720px;
 }
 
+.editable-table--grants {
+  min-width: 1060px;
+}
+
 .editable-table--growth {
   min-width: 1520px;
 }

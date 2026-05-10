@@ -15,6 +15,15 @@ export interface DecisionPackPdfOption {
 interface DecisionPackPdfInput {
   authorityConfig: AuthorityConfig;
   options: DecisionPackPdfOption[];
+  recommendation?: {
+    label?: string;
+    weights: {
+      affordability: number;
+      risk: number;
+      reserves: number;
+      deliverability: number;
+    };
+  };
 }
 
 const PAGE_MARGIN = 36;
@@ -72,7 +81,9 @@ function drawSectionTitle(doc: jsPDF, title: string, y: number) {
   return y + 18;
 }
 
-function rankRecommendation(options: DecisionPackPdfOption[]) {
+export function resolveDecisionPackRecommendation(options: DecisionPackPdfOption[], weightedLabel?: string) {
+  const weighted = weightedLabel ? options.find((option) => option.label === weightedLabel) : undefined;
+  if (weighted) return weighted;
   return [...options].sort((a, b) => {
     if (a.result.totalGap !== b.result.totalGap) return a.result.totalGap - b.result.totalGap;
     if (a.result.overallRiskScore !== b.result.overallRiskScore) return a.result.overallRiskScore - b.result.overallRiskScore;
@@ -98,11 +109,14 @@ function renderRiskFactors(doc: jsPDF, y: number, factors: RiskFactor[]) {
   return getAutoTableFinalY(doc, y) + 12;
 }
 
-export function exportDecisionPackPdf({ authorityConfig, options }: DecisionPackPdfInput) {
+export function exportDecisionPackPdf({ authorityConfig, options, recommendation }: DecisionPackPdfInput) {
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const now = new Date();
   const selectedOptions = options.slice(0, 3);
-  const recommended = rankRecommendation(selectedOptions);
+  const recommended = resolveDecisionPackRecommendation(selectedOptions, recommendation?.label);
+  const criteriaText = recommendation
+    ? `Recommendation uses the on-screen weighted matrix: affordability ${recommendation.weights.affordability}, risk ${recommendation.weights.risk}, reserves ${recommendation.weights.reserves}, deliverability ${recommendation.weights.deliverability}.`
+    : 'Recommendation uses affordability, risk and reserves as default ranking criteria.';
 
   // Cover
   doc.setFillColor(15, 23, 42);
@@ -142,6 +156,8 @@ export function exportDecisionPackPdf({ authorityConfig, options }: DecisionPack
   y = drawSectionTitle(doc, 'Executive Summary', y);
   const recommendationText = `${recommended.label} (${recommended.name}) is the leading option on combined affordability and risk. It delivers a ${fmtK(recommended.result.totalGap)} 5-year gap, risk score ${recommended.result.overallRiskScore.toFixed(0)}/100 (${riskBand(recommended.result.overallRiskScore)}), and Year 5 reserves of ${fmtK(recommended.result.years[4]?.totalClosingReserves ?? 0)}.`;
   y = writeParagraph(doc, recommendationText, y);
+  y += 6;
+  y = writeParagraph(doc, criteriaText, y, 9);
   y += 6;
   y = writeParagraph(
     doc,

@@ -39,6 +39,56 @@ describe('uiUx helpers', () => {
     expect(steps.find((step) => step.id === 'scenarios')?.status).toBe('blocked');
   });
 
+  it('shows a locked baseline as complete while retaining quality warning detail', () => {
+    const baseline = {
+      ...DEFAULT_BASELINE,
+      workforceModel: {
+        ...DEFAULT_BASELINE.workforceModel,
+        enabled: true,
+        mode: 'workforce_posts' as const,
+        posts: [{
+          id: 'wf-warning',
+          postId: 'WF-WARN',
+          service: 'Adults',
+          fundingSource: 'general_fund' as const,
+          fte: 1,
+          annualCost: 10_000,
+          payAssumptionGroup: 'default' as const,
+          vacancyFactor: 0,
+          generalFundSplit: 90,
+          grantFundSplit: 0,
+          otherSplit: 0,
+        }],
+      },
+    };
+    const result = runCalculations(DEFAULT_ASSUMPTIONS, baseline, []);
+    const validation = validateModel({
+      authorityConfig: { ...DEFAULT_AUTHORITY_CONFIG, authorityName: 'Test Council' },
+      baseline,
+      assumptions: DEFAULT_ASSUMPTIONS,
+      result,
+      savingsProposals: [],
+      scenarios: [],
+      snapshots: [],
+      workflowState: { baselineLocked: true, assumptionsFrozen: false, governanceExports: { memberBrief: 0, s151Pack: 0, dataCsv: 0 } },
+    });
+    const steps = buildWorkflowSteps({
+      validation,
+      authorityName: 'Test Council',
+      baselineLocked: true,
+      assumptionsFrozen: false,
+      savingsProposals: [],
+      scenarios: [],
+      snapshots: [],
+      result,
+      exports: { memberBrief: 0, s151Pack: 0, dataCsv: 0 },
+    });
+    const baselineStep = steps.find((step) => step.id === 'baseline');
+
+    expect(baselineStep?.status).toBe('complete');
+    expect(baselineStep?.detail).toContain('quality warning');
+  });
+
   it('builds KPI trace rows with source, formula and provenance', () => {
     const result = runCalculations(DEFAULT_ASSUMPTIONS, DEFAULT_BASELINE, []);
     const rows = buildKpiTraceRows(result, 'Manual');

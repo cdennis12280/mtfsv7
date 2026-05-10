@@ -513,6 +513,43 @@ describe('calculation engine', () => {
     expect(result.years[1].businessRates).toBeLessThan(result.years[0].businessRates);
     expect(result.years[1].coreGrants).toBeGreaterThanOrEqual(500);
   });
+
+  it('central funding config edits flow into yearly funding outputs', () => {
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.funding.councilTaxIncrease = makeYearProfile(0);
+    assumptions.funding.grantVariation = makeYearProfile(0);
+
+    const baseline = clone(DEFAULT_BASELINE);
+    const base = runCalculations(assumptions, baseline, []);
+
+    baseline.councilTaxBaseConfig.enabled = true;
+    baseline.councilTaxBaseConfig.bandDEquivalentDwellings = 12_000;
+    baseline.councilTaxBaseConfig.bandDCharge = 2_100;
+    baseline.councilTaxBaseConfig.collectionRate = 99;
+    baseline.councilTaxBaseConfig.corePreceptPct = 0;
+    baseline.councilTaxBaseConfig.ascPreceptPct = 0;
+    baseline.businessRatesConfig.enabled = true;
+    baseline.businessRatesConfig.baselineRates = 8_000;
+    baseline.businessRatesConfig.growthRate = makeYearProfile(0);
+    baseline.businessRatesConfig.appealsProvision = 250;
+    baseline.businessRatesConfig.tariffTopUp = 500;
+    baseline.grantSchedule = [{
+      id: 'grant-flow',
+      name: 'Confirmed grant',
+      value: 2_000,
+      certainty: 'confirmed',
+      endYear: 5,
+      ringfenced: true,
+      inflationLinked: false,
+      replacementAssumption: 100,
+    }];
+
+    const changed = runCalculations(assumptions, baseline, []);
+
+    expect(changed.years[0].councilTax).not.toBe(base.years[0].councilTax);
+    expect(changed.years[0].businessRates).not.toBe(base.years[0].businessRates);
+    expect(changed.years[0].coreGrants).toBe(base.years[0].coreGrants + 2_000);
+  });
 });
 
 describe('baseline csv parser', () => {

@@ -1,3 +1,7 @@
+/// <reference types="node" />
+
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { useMTFSStore } from '../mtfsStore';
 
@@ -76,5 +80,28 @@ describe('mtfs scenario workflow', () => {
     const scenario = useMTFSStore.getState().scenarios.at(-1);
     expect(scenario?.name).toContain('Funding Shock');
     expect(scenario?.result.years).toHaveLength(5);
+  });
+
+  it('imports snapshot workbooks without changing the current model until loaded', async () => {
+    const store = useMTFSStore.getState();
+    store.resetToDefaults();
+
+    const originalCouncilTax = useMTFSStore.getState().baseline.councilTax;
+    const workbookPath = path.resolve(process.cwd(), 'demo-data/west-northamptonshire-a31-model-snapshot.xlsx');
+    const bytes = fs.readFileSync(workbookPath);
+    const file = new File([bytes], 'west-northamptonshire-a31-model-snapshot.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    const imported = await useMTFSStore.getState().importSnapshotFromXlsxFile(file);
+
+    expect(imported.success).toBe(true);
+    expect(imported.snapshotId).toBeTruthy();
+    expect(useMTFSStore.getState().baseline.councilTax).toBe(originalCouncilTax);
+
+    useMTFSStore.getState().loadSnapshot(imported.snapshotId ?? '');
+
+    expect(useMTFSStore.getState().baseline.councilTax).toBe(292_000);
+    expect(useMTFSStore.getState().workflowState.currentWorkingSet?.kind).toBe('snapshot');
   });
 });

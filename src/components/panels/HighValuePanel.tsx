@@ -12,6 +12,7 @@ function fmtK(v: number) {
 export function HighValuePanel() {
   const {
     baseline,
+    assumptions,
     result,
     updateCouncilTaxBaseConfig,
     updateBusinessRatesConfig,
@@ -40,6 +41,28 @@ export function HighValuePanel() {
     message: '',
   });
   const [isGrantTemplateLoading, setIsGrantTemplateLoading] = React.useState(false);
+  const grantCertaintyFactor = (certainty: GrantCertainty) => {
+    if (certainty === 'confirmed') return 1;
+    if (certainty === 'indicative') return 0.75;
+    return 0.5;
+  };
+  const grantVariationProfile = typeof assumptions.funding.grantVariation === 'number'
+    ? { y1: assumptions.funding.grantVariation, y2: assumptions.funding.grantVariation, y3: assumptions.funding.grantVariation, y4: assumptions.funding.grantVariation, y5: assumptions.funding.grantVariation }
+    : assumptions.funding.grantVariation;
+  const grantCompoundFactor = (year: number) => {
+    let factor = 1;
+    for (let i = 1; i <= year; i += 1) {
+      factor *= 1 + grantVariationProfile[`y${i}` as keyof typeof grantVariationProfile] / 100;
+    }
+    return factor;
+  };
+  const scheduledGrantAddition = (year: 1 | 5) => grantSchedule.reduce((sum, grant) => {
+    if (grant.endYear < year) return sum + (grant.value * ((grant.replacementAssumption ?? 0) / 100) * grantCertaintyFactor(grant.certainty));
+    const linkedValue = grant.inflationLinked ? grant.value * grantCompoundFactor(Math.max(0, year - 1)) : grant.value;
+    return sum + (linkedValue * grantCertaintyFactor(grant.certainty));
+  }, 0);
+  const y1 = result.years[0];
+  const y5 = result.years[4];
 
   const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const toNumber = (value: unknown, fallback = 0) => {
@@ -140,14 +163,14 @@ export function HighValuePanel() {
     setIsGrantTemplateLoading(true);
     try {
       const { utils, write } = await import('xlsx');
-      const headers = ['name', 'value', 'certainty', 'endYear'];
-      const templateRows = [headers, ['', '', '', '']];
+      const headers = ['name', 'value', 'certainty', 'endYear', 'ringfenced', 'inflationLinked', 'replacementAssumption'];
+      const templateRows = [headers, ['', '', '', '', '', '', '']];
       const exampleRows = [
         headers,
-        ['Public Health Grant', 4200, 'confirmed', 5],
-        ['Household Support Fund', 1800, 'indicative', 2],
-        ['Transformation Grant', 1250, 'assumed', 3],
-        ['Supporting Families Grant', 900, 'indicative', 4],
+        ['Public Health Grant', 4200, 'confirmed', 5, 'yes', 'yes', 100],
+        ['Household Support Fund', 1800, 'indicative', 2, 'yes', 'no', 0],
+        ['Transformation Grant', 1250, 'assumed', 3, 'no', 'no', 50],
+        ['Supporting Families Grant', 900, 'indicative', 4, 'yes', 'no', 75],
       ];
       const instructionsRows = [
         ['Grant Schedule Builder Template - Instructions'],
@@ -162,14 +185,19 @@ export function HighValuePanel() {
         ['2) Enter one grant per row in Template_Blank'],
         ['3) certainty values: confirmed, indicative, assumed'],
         ['4) endYear values: 1 to 5 (MTFS year grant ends)'],
-        ['5) Save as .xlsx/.xls or export as .csv'],
-        ['6) In Grant Schedule Builder click Import CSV/XLSX and choose your file'],
+        ['5) ringfenced and inflationLinked values: yes or no'],
+        ['6) replacementAssumption is the percentage retained after expiry'],
+        ['7) Save as .xlsx/.xls or export as .csv'],
+        ['8) In Grant Schedule Builder click Import CSV/XLSX and choose your file'],
         [''],
         ['Field definitions'],
         ['- name: grant label used in model and reports'],
         ['- value: annual grant value in £000'],
         ['- certainty: confidence weighting applied in funding calculations'],
         ['- endYear: final year grant remains available'],
+        ['- ringfenced: evidence/readiness metadata; it does not exclude grant from the current total funding calculation'],
+        ['- inflationLinked: whether grant value follows the grant variation profile'],
+        ['- replacementAssumption: percentage retained after the grant end year'],
         [''],
         ['Note'],
         ['- Import appends entries to existing grants; remove existing rows if replacing data.'],
@@ -239,6 +267,20 @@ export function HighValuePanel() {
             <input type="number" className="w-full input" value={councilTaxBaseConfig.collectionFundSurplusDeficit} onChange={(e) => updateCouncilTaxBaseConfig({ collectionFundSurplusDeficit: Number(e.target.value) || 0 })} title="Council tax collection fund surplus or deficit adjustment." />
           </div>
         </div>
+        <div className="mt-3 grid gap-2 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3 text-[11px] md:grid-cols-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-[#4a6080]">Calculation impact</p>
+            <p className="mt-1 font-semibold text-[#f0f4ff]">{councilTaxBaseConfig.enabled ? 'Band D model enabled' : 'Baseline council tax uplift'}</p>
+          </div>
+          <div>
+            <p className="text-[#4a6080]">Y1 council tax yield</p>
+            <p className="mono text-[#dbeafe]">{fmtK(y1?.councilTax ?? 0)}</p>
+          </div>
+          <div>
+            <p className="text-[#4a6080]">Y5 council tax yield</p>
+            <p className="mono text-[#dbeafe]">{fmtK(y5?.councilTax ?? 0)}</p>
+          </div>
+        </div>
       </Card>
 
       <Card>
@@ -274,6 +316,20 @@ export function HighValuePanel() {
             </select>
           </div>
         </div>
+        <div className="mt-3 grid gap-2 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3 text-[11px] md:grid-cols-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-[#4a6080]">Calculation impact</p>
+            <p className="mt-1 font-semibold text-[#f0f4ff]">{businessRatesConfig.enabled ? 'Retained rates model enabled' : 'Baseline business rates uplift'}</p>
+          </div>
+          <div>
+            <p className="text-[#4a6080]">Y1 retained rates</p>
+            <p className="mono text-[#dbeafe]">{fmtK(y1?.businessRates ?? 0)}</p>
+          </div>
+          <div>
+            <p className="text-[#4a6080]">Y5 retained rates</p>
+            <p className="mono text-[#dbeafe]">{fmtK(y5?.businessRates ?? 0)}</p>
+          </div>
+        </div>
       </Card>
 
       <Card>
@@ -305,8 +361,29 @@ export function HighValuePanel() {
         </CardHeader>
         <div className="space-y-2">
           <p className="text-[10px] text-[#4a6080]">
-            Grant schedule lines are added on top of the baseline <span className="text-[#8ca0c0] font-semibold">Core Grants</span> value.
+            Grant schedule lines are added on top of the baseline <span className="text-[#8ca0c0] font-semibold">Core Grants</span> value. Ringfenced marks evidence/readiness only; it does not exclude a grant from total funding in the current model.
           </p>
+          <div className="grid gap-2 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3 text-[11px] md:grid-cols-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-[#4a6080]">Calculation impact</p>
+              <p className="mt-1 font-semibold text-[#f0f4ff]">{grantSchedule.length} scheduled grant line{grantSchedule.length === 1 ? '' : 's'}</p>
+            </div>
+            <div>
+              <p className="text-[#4a6080]">Baseline core grants</p>
+              <p className="mono text-[#dbeafe]">{fmtK(baseline.coreGrants)}</p>
+            </div>
+            <div>
+              <p className="text-[#4a6080]">Y1 scheduled addition</p>
+              <p className="mono text-[#dbeafe]">{fmtK(scheduledGrantAddition(1))}</p>
+            </div>
+            <div>
+              <p className="text-[#4a6080]">Y1 / Y5 grant total</p>
+              <p className="mono text-[#dbeafe]">{fmtK(y1?.coreGrants ?? 0)} / {fmtK(y5?.coreGrants ?? 0)}</p>
+            </div>
+            <div className="md:col-span-4 text-[10px] text-[#8ca0c0]">
+              Certainty weighting: confirmed 100%, indicative 75%, assumed 50%. Expiring grants: {result.grantsExpiringInYears.length > 0 ? result.grantsExpiringInYears.join(', ') : 'none flagged'}.
+            </div>
+          </div>
           {grantImportStatus.type !== 'idle' && (
             <div
               className="flex items-start gap-2 p-2.5 rounded-lg text-[11px]"
@@ -324,35 +401,52 @@ export function HighValuePanel() {
           )}
           {grantSchedule.length === 0 && <p className="text-[11px] text-[#4a6080]">No grants configured.</p>}
           {grantSchedule.length > 0 && (
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 items-center px-1">
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Grant</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Certainty</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">End Year</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Ringfenced</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Replacement %</p>
-              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Action</p>
+            <div className="editable-table-wrap" data-testid="grant-schedule-table">
+              <table className="editable-table editable-table--grants">
+                <colgroup>
+                  <col style={{ width: '260px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '72px' }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    {['Grant', 'Value (£k)', 'Certainty', 'End Year', 'Ringfenced', 'Inflation Linked', 'Replacement %', 'Action'].map((heading) => (
+                      <th key={heading} className={['Value (£k)', 'End Year', 'Replacement %', 'Action'].includes(heading) ? 'editable-table__number' : undefined}>{heading}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {grantSchedule.map((g) => (
+                    <tr key={g.id}>
+                      <td data-label="Grant"><input aria-label={`Grant name for ${g.name || 'new grant'}`} className="input editable-table__input" placeholder="Grant name" value={g.name} onChange={(e) => updateGrantScheduleEntry(g.id, { name: e.target.value })} title="Grant label used in reports." /></td>
+                      <td data-label="Value (£k)" className="editable-table__number"><input aria-label={`Grant value for ${g.name || 'new grant'}`} type="number" className="input editable-table__input editable-table__input--number" value={g.value} onChange={(e) => updateGrantScheduleEntry(g.id, { value: Number(e.target.value) || 0 })} title="Annual grant value in £000s." /></td>
+                      <td data-label="Certainty"><select aria-label={`Certainty for ${g.name || 'new grant'}`} className="input editable-table__select" value={g.certainty} onChange={(e) => updateGrantScheduleEntry(g.id, { certainty: e.target.value as GrantCertainty })} title="Confidence level used in weighted funding calculations.">
+                        <option value="confirmed">Confirmed</option>
+                        <option value="indicative">Indicative</option>
+                        <option value="assumed">Assumed</option>
+                      </select></td>
+                      <td data-label="End Year" className="editable-table__number"><select aria-label={`End year for ${g.name || 'new grant'}`} className="input editable-table__select" value={g.endYear} onChange={(e) => updateGrantScheduleEntry(g.id, { endYear: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 })} title="Final MTFS year this grant is assumed to continue.">
+                        {[1, 2, 3, 4, 5].map((year) => <option key={year} value={year}>Y{year}</option>)}
+                      </select></td>
+                      <td data-label="Ringfenced"><select aria-label={`Ringfenced status for ${g.name || 'new grant'}`} className="input editable-table__select" value={g.ringfenced ? 'yes' : 'no'} onChange={(e) => updateGrantScheduleEntry(g.id, { ringfenced: e.target.value === 'yes' })}>
+                        <option value="no">No</option><option value="yes">Yes</option>
+                      </select></td>
+                      <td data-label="Inflation Linked"><select aria-label={`Inflation linked status for ${g.name || 'new grant'}`} className="input editable-table__select" value={g.inflationLinked ? 'yes' : 'no'} onChange={(e) => updateGrantScheduleEntry(g.id, { inflationLinked: e.target.value === 'yes' })}>
+                        <option value="no">No</option><option value="yes">Yes</option>
+                      </select></td>
+                      <td data-label="Replacement %" className="editable-table__number"><input aria-label={`Replacement percentage for ${g.name || 'new grant'}`} type="number" className="input editable-table__input editable-table__input--number" value={g.replacementAssumption ?? 0} onChange={(e) => updateGrantScheduleEntry(g.id, { replacementAssumption: Number(e.target.value) || 0 })} title="Percentage of grant assumed to continue after end year." /></td>
+                      <td data-label="Action" className="editable-table__action"><button aria-label={`Remove grant ${g.name || 'new grant'}`} onClick={() => removeGrantScheduleEntry(g.id)} className="editable-table__delete" title={`Remove grant ${g.name || 'new grant'}`}><Trash2 size={13} /></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-          {grantSchedule.map((g) => (
-            <div key={g.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 items-center">
-              <input className="input" placeholder="Grant name" value={g.name} onChange={(e) => updateGrantScheduleEntry(g.id, { name: e.target.value })} title="Grant label used in reports." />
-              <input type="number" className="input" value={g.value} onChange={(e) => updateGrantScheduleEntry(g.id, { value: Number(e.target.value) || 0 })} title="Annual grant value in £000s." />
-              <select className="input" value={g.certainty} onChange={(e) => updateGrantScheduleEntry(g.id, { certainty: e.target.value as GrantCertainty })} title="Confidence level used in weighted funding calculations.">
-                <option value="confirmed">Confirmed</option>
-                <option value="indicative">Indicative</option>
-                <option value="assumed">Assumed</option>
-              </select>
-              <select className="input" value={g.endYear} onChange={(e) => updateGrantScheduleEntry(g.id, { endYear: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 })} title="Final MTFS year this grant is assumed to continue.">
-                {[1, 2, 3, 4, 5].map((y) => <option key={y} value={y}>Ends Y{y}</option>)}
-              </select>
-              <select className="input" value={g.ringfenced ? 'yes' : 'no'} onChange={(e) => updateGrantScheduleEntry(g.id, { ringfenced: e.target.value === 'yes' })}>
-                <option value="no">No</option><option value="yes">Yes</option>
-              </select>
-              <input type="number" className="input" value={g.replacementAssumption ?? 0} onChange={(e) => updateGrantScheduleEntry(g.id, { replacementAssumption: Number(e.target.value) || 0 })} title="Percentage of grant assumed to continue after end year." />
-              <button onClick={() => removeGrantScheduleEntry(g.id)} className="text-[#ef4444]" title="Remove this grant line."><Trash2 size={12} /></button>
-            </div>
-          ))}
           {result.grantsExpiringInYears.length > 0 && (
             <p className="text-[10px] text-[#f59e0b]">Expiring during MTFS: {result.grantsExpiringInYears.join(', ')}</p>
           )}

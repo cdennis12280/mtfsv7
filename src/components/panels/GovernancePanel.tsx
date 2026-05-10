@@ -88,70 +88,70 @@ export function GovernancePanel() {
   const latestSnapshot = snapshots[0];
   const latestSnapshotResult = latestSnapshot ? runCalculations(latestSnapshot.assumptions, latestSnapshot.baseline, latestSnapshot.savingsProposals) : null;
   const snapshotGapDelta = latestSnapshotResult ? result.totalGap - latestSnapshotResult.totalGap : null;
+  const lastValidation = workflowState.lastValidation;
+  const readinessRows = [
+    { label: 'Baseline locked', value: workflowState.baselineLocked ? 'Ready' : 'Action needed', ready: workflowState.baselineLocked },
+    { label: 'Pack frozen', value: workflowState.assumptionsFrozen ? 'Ready' : 'Not frozen', ready: workflowState.assumptionsFrozen },
+    { label: 'Validation status', value: lastValidation ? `${lastValidation.blockers.length} blockers` : 'Not run', ready: lastValidation ? lastValidation.blockers.length === 0 : false },
+    { label: 'Latest snapshot', value: latestSnapshot ? latestSnapshot.name : 'None saved', ready: Boolean(latestSnapshot) },
+    { label: 'Exports completed', value: `Brief ${workflowState.governanceExports.memberBrief} · S151 ${workflowState.governanceExports.s151Pack} · CSV ${workflowState.governanceExports.dataCsv}`, ready: workflowState.governanceExports.memberBrief + workflowState.governanceExports.s151Pack + workflowState.governanceExports.dataCsv > 0 },
+  ];
 
   return (
     <div id="governance-readiness" className="space-y-4 scroll-mt-32">
-      {/* Export actions */}
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          onClick={() => freezeAssumptionsForPack(`pack-${new Date().toISOString().slice(0, 10)}`)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] text-[#10b981] text-[11px] font-semibold hover:bg-[rgba(16,185,129,0.18)] transition-colors"
-        >
-          Freeze Pack
-        </button>
-        <button
-          onClick={() => runEndToEndValidation()}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.12)] border border-[rgba(59,130,246,0.3)] text-[#60a5fa] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.2)] transition-colors"
-        >
-          Readiness Check
-        </button>
-        <button
-          onClick={handleOnePageBriefExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] transition-colors"
-        >
-          <FileText size={13} />
-          Member Brief
-        </button>
-        <button
-          onClick={handleFullExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(245,158,11,0.1)] border border-[rgba(245,158,11,0.3)] text-[#f59e0b] text-[11px] font-semibold hover:bg-[rgba(245,158,11,0.18)] transition-colors"
-        >
-          <FileText size={13} />
-          S151 Pack
-        </button>
-        <button
-          onClick={handleCsvExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(16,185,129,0.08)] border border-[rgba(16,185,129,0.2)] text-[#10b981] text-[11px] font-semibold hover:bg-[rgba(16,185,129,0.15)] transition-colors"
-        >
-          <Download size={13} />
-          Data CSV
-        </button>
-        <button
-          onClick={handleAuditExport}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(148,163,184,0.1)] border border-[rgba(148,163,184,0.25)] text-[#cbd5e1] text-[11px] font-semibold hover:bg-[rgba(148,163,184,0.16)] transition-colors"
-        >
-          <Download size={13} />
-          Audit CSV
-        </button>
-        <span className="text-[10px] text-[#4a6080]">
-          Report branded for: <span className="text-[#8ca0c0] font-semibold">{authorityConfig.authorityName}</span>
-        </span>
-      </div>
-      <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0] flex flex-wrap gap-3">
-        <span>Provenance: Baseline lock {workflowState.baselineLocked ? 'ON' : 'OFF'}</span>
-        <span>Pack freeze {workflowState.assumptionsFrozen ? `ON (${workflowState.frozenLabel ?? 'locked'})` : 'OFF'}</span>
-        <span>Overlay imports {safeBaseline.overlayImports.length}</span>
-        <span>Manual overrides {safeBaseline.manualAdjustments.length}</span>
-        <span>Exports: Brief {workflowState.governanceExports.memberBrief} · S151 {workflowState.governanceExports.s151Pack} · CSV {workflowState.governanceExports.dataCsv}</span>
-      </div>
-      <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0]">
-        <span className="font-semibold text-[#c9d6ef]">What changed since last snapshot: </span>
-        {latestSnapshot
-          ? `Latest snapshot "${latestSnapshot.name}" was saved ${new Date(latestSnapshot.createdAt).toLocaleString('en-GB')}. Current pack has ${savingsProposals.length - latestSnapshot.savingsProposals.length} savings proposal delta(s)`
-          : 'No saved snapshot yet. Save a snapshot before final governance export to create a comparison point.'}
-        {snapshotGapDelta !== null ? `; gap movement ${fmtK(snapshotGapDelta)}.` : '.'}
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Governance Readiness</CardTitle>
+          <span className="text-[10px] text-[#4a6080]">Report branded for {authorityConfig.authorityName}</span>
+        </CardHeader>
+        <div className="grid gap-2 md:grid-cols-5">
+          {readinessRows.map((row) => (
+            <div key={row.label} className="rounded-lg border p-3" style={{ borderColor: row.ready ? 'rgba(16,185,129,0.24)' : 'rgba(245,158,11,0.24)', background: row.ready ? 'rgba(16,185,129,0.06)' : 'rgba(245,158,11,0.06)' }}>
+              <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">{row.label}</p>
+              <p className="mt-1 text-[11px] font-semibold text-[#f0f4ff]">{row.value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0]">
+          <span className="font-semibold text-[#c9d6ef]">What changed since last snapshot: </span>
+          {latestSnapshot
+            ? `Latest snapshot "${latestSnapshot.name}" saved ${new Date(latestSnapshot.createdAt).toLocaleString('en-GB')}; savings proposal delta ${savingsProposals.length - latestSnapshot.savingsProposals.length}`
+            : 'No saved snapshot yet. Save a snapshot before final governance export to create a comparison point.'}
+          {snapshotGapDelta !== null ? `; gap movement ${fmtK(snapshotGapDelta)}.` : '.'}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={() => freezeAssumptionsForPack(`pack-${new Date().toISOString().slice(0, 10)}`)} className="rounded-lg border border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.1)] px-3 py-2 text-[11px] font-semibold text-[#10b981]">Freeze Pack</button>
+          <button onClick={() => runEndToEndValidation()} className="rounded-lg border border-[rgba(59,130,246,0.3)] bg-[rgba(59,130,246,0.12)] px-3 py-2 text-[11px] font-semibold text-[#60a5fa]">Readiness Check</button>
+        </div>
+      </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Export Pack</CardTitle>
+          <span className="text-[10px] text-[#4a6080]">Generate committee, assurance and data evidence outputs.</span>
+        </CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={handleOnePageBriefExport} className="flex items-center gap-2 rounded-lg border border-[rgba(59,130,246,0.3)] bg-[rgba(59,130,246,0.15)] px-3 py-2 text-[11px] font-semibold text-[#3b82f6]"><FileText size={13} />Member Brief</button>
+          <button onClick={handleFullExport} className="flex items-center gap-2 rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.1)] px-3 py-2 text-[11px] font-semibold text-[#f59e0b]"><FileText size={13} />S151 Pack</button>
+          <button onClick={handleCsvExport} className="flex items-center gap-2 rounded-lg border border-[rgba(16,185,129,0.2)] bg-[rgba(16,185,129,0.08)] px-3 py-2 text-[11px] font-semibold text-[#10b981]"><Download size={13} />Data CSV</button>
+          <button onClick={handleAuditExport} className="flex items-center gap-2 rounded-lg border border-[rgba(148,163,184,0.25)] bg-[rgba(148,163,184,0.1)] px-3 py-2 text-[11px] font-semibold text-[#cbd5e1]"><Download size={13} />Audit CSV</button>
+        </div>
+      </Card>
+
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Evidence and provenance</summary>
+        <div className="mt-3 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0] flex flex-wrap gap-3">
+          <span>Baseline lock {workflowState.baselineLocked ? 'ON' : 'OFF'}</span>
+          <span>Pack freeze {workflowState.assumptionsFrozen ? `ON (${workflowState.frozenLabel ?? 'locked'})` : 'OFF'}</span>
+          <span>Overlay imports {safeBaseline.overlayImports.length}</span>
+          <span>Manual overrides {safeBaseline.manualAdjustments.length}</span>
+          <span>Exports: Brief {workflowState.governanceExports.memberBrief} · S151 {workflowState.governanceExports.s151Pack} · CSV {workflowState.governanceExports.dataCsv}</span>
+        </div>
+      </details>
+
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Data sources</summary>
+        <div className="mt-3">
       {/* Data Sources */}
       <Card>
         <CardHeader>
@@ -179,7 +179,12 @@ export function GovernancePanel() {
           ))}
         </div>
       </Card>
+        </div>
+      </details>
 
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Methodology</summary>
+        <div className="mt-3">
       {/* Methodology */}
       <Card>
         <CardHeader>
@@ -202,7 +207,12 @@ export function GovernancePanel() {
           ))}
         </div>
       </Card>
+        </div>
+      </details>
 
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Limitations</summary>
+        <div className="mt-3">
       {/* Limitations */}
       <Card>
         <CardHeader>
@@ -225,7 +235,12 @@ export function GovernancePanel() {
           ))}
         </div>
       </Card>
+        </div>
+      </details>
 
+      <details className="rounded-xl border border-[rgba(99,179,237,0.12)] bg-[rgba(10,17,32,0.55)] p-3">
+        <summary className="cursor-pointer text-[11px] font-semibold text-[#8ca0c0]">Assumptions log</summary>
+        <div className="mt-3">
       {/* Assumptions log */}
       <Card>
         <CardHeader>
@@ -256,6 +271,8 @@ export function GovernancePanel() {
           ))}
         </div>
       </Card>
+        </div>
+      </details>
     </div>
   );
 }

@@ -111,6 +111,8 @@ export function buildWorkflowSteps(input: {
   exports: { memberBrief: number; s151Pack: number; dataCsv: number };
 }): WorkflowStepStatus[] {
   const issueFor = (area: string) => input.validation.issues.find((issue) => issue.area === area && issue.severity === 'blocker') ?? input.validation.issues.find((issue) => issue.area === area && issue.severity === 'warning');
+  const blockerFor = (area: string) => input.validation.issues.find((issue) => issue.area === area && issue.severity === 'blocker');
+  const warningCountFor = (area: string) => input.validation.issues.filter((issue) => issue.area === area && issue.severity === 'warning').length;
   const status = (done: boolean, area: string, notStarted = false): WorkflowStatus => {
     const issue = issueFor(area);
     if (issue?.severity === 'blocker') return 'blocked';
@@ -123,9 +125,15 @@ export function buildWorkflowSteps(input: {
   const reservesDone = !input.result.yearReservesExhausted && input.result.reservesToNetBudget >= 5;
   const scenariosDone = input.scenarios.length > 0;
   const governanceDone = input.exports.memberBrief > 0 || input.exports.s151Pack > 0;
+  const baselineBlocker = blockerFor('baseline');
+  const baselineWarningCount = warningCountFor('baseline');
+  const baselineStatus: WorkflowStatus = baselineBlocker ? 'blocked' : input.baselineLocked ? 'complete' : baselineWarningCount > 0 ? 'blocked' : 'warning';
+  const baselineDetail = input.baselineLocked
+    ? `Locked${baselineWarningCount > 0 ? ` · ${baselineWarningCount} quality warning${baselineWarningCount === 1 ? '' : 's'}` : ' for modelling'}`
+    : 'Review and lock baseline';
   return [
     { id: 'setup', label: 'Setup', tab: 'baseline', anchor: 'authority-metadata', status: status(setupDone, 'setup'), detail: setupDone ? 'Authority confirmed' : 'Confirm authority metadata', blocker: issueFor('setup')?.message },
-    { id: 'baseline', label: 'Baseline', tab: 'baseline', anchor: 'baseline-core', status: status(input.baselineLocked, 'baseline'), detail: input.baselineLocked ? 'Locked for modelling' : 'Review and lock baseline', blocker: issueFor('baseline')?.message },
+    { id: 'baseline', label: 'Baseline', tab: 'baseline', anchor: 'baseline-core', status: baselineStatus, detail: baselineDetail, blocker: baselineBlocker?.message },
     { id: 'assumptions', label: 'Assumptions', tab: 'baseline', anchor: 'assumption-engine-sidebar', status: input.assumptionsFrozen ? 'complete' : 'warning', detail: input.assumptionsFrozen ? 'Frozen for pack' : 'Live editable assumptions' },
     { id: 'savings', label: 'Savings', tab: 'savings', anchor: 'savings-programme', status: status(savingsDone, 'savings', input.savingsProposals.length === 0), detail: input.savingsProposals.length > 0 ? `${input.savingsProposals.length} proposals` : 'No proposal-level plan', blocker: issueFor('savings')?.message },
     { id: 'reserves', label: 'Reserves', tab: 'reserves', anchor: 'reserves-analysis', status: status(reservesDone, 'reserves'), detail: input.result.yearReservesExhausted ? `Exhausted ${input.result.yearReservesExhausted}` : `${input.result.reservesToNetBudget.toFixed(1)}% of funding`, blocker: issueFor('reserves')?.message },
