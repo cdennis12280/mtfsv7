@@ -9,6 +9,7 @@ import { InsightsPanel } from './InsightsPanel';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 import { runCalculations } from '../../engine/calculations';
 import { RichTooltip } from '../ui/RichTooltip';
+import { makeYearProfile } from '../../utils/yearProfile';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -75,12 +76,12 @@ export function OverviewPanel() {
       ...assumptions,
       policy: {
         ...assumptions.policy,
-        annualSavingsTarget: 0,
-        reservesUsage: 0,
+        annualSavingsTarget: makeYearProfile(0),
+        reservesUsage: makeYearProfile(0),
       },
       expenditure: {
         ...assumptions.expenditure,
-        savingsDeliveryRisk: 100,
+        savingsDeliveryRisk: makeYearProfile(100),
       },
     };
     return runCalculations(withoutMitigationAssumptions, baseline, []);

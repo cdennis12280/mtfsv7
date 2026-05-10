@@ -5,6 +5,7 @@ import {
   DEFAULT_BASELINE,
   runCalculations,
 } from '../engine/calculations';
+import { y1 } from './yearProfile';
 
 type AssumptionsPatch = {
   funding?: Partial<Assumptions['funding']>;
@@ -117,17 +118,17 @@ function assumptionsRows(snapshot: ModelSnapshot): (string | number)[][] {
   const a = snapshot.assumptions;
   return [
     ['section', 'field', 'value', 'unit', 'guidance'],
-    ['funding', 'councilTaxIncrease', a.funding.councilTaxIncrease, '%', 'Annual council tax increase assumption'],
-    ['funding', 'businessRatesGrowth', a.funding.businessRatesGrowth, '%', 'Annual business rates growth assumption'],
-    ['funding', 'grantVariation', a.funding.grantVariation, '%', 'Annual grant increase/decrease assumption'],
-    ['funding', 'feesChargesElasticity', a.funding.feesChargesElasticity, '%', 'Annual fees and charges growth assumption'],
-    ['expenditure', 'payAward', a.expenditure.payAward, '%', 'Annual pay uplift assumption'],
-    ['expenditure', 'nonPayInflation', a.expenditure.nonPayInflation, '%', 'Annual non-pay inflation assumption'],
-    ['expenditure', 'ascDemandGrowth', a.expenditure.ascDemandGrowth, '%', 'ASC demand growth assumption'],
-    ['expenditure', 'cscDemandGrowth', a.expenditure.cscDemandGrowth, '%', 'CSC demand growth assumption'],
-    ['expenditure', 'savingsDeliveryRisk', a.expenditure.savingsDeliveryRisk, '%', 'Programme delivery percentage'],
-    ['policy', 'annualSavingsTarget', a.policy.annualSavingsTarget, '£000', 'Policy-level annual savings target'],
-    ['policy', 'reservesUsage', a.policy.reservesUsage, '£000', 'Planned annual reserves usage'],
+    ['funding', 'councilTaxIncrease', y1(a.funding.councilTaxIncrease), '%', 'Annual council tax increase assumption'],
+    ['funding', 'businessRatesGrowth', y1(a.funding.businessRatesGrowth), '%', 'Annual business rates growth assumption'],
+    ['funding', 'grantVariation', y1(a.funding.grantVariation), '%', 'Annual grant increase/decrease assumption'],
+    ['funding', 'feesChargesElasticity', y1(a.funding.feesChargesElasticity), '%', 'Annual fees and charges growth assumption'],
+    ['expenditure', 'payAward', y1(a.expenditure.payAward), '%', 'Annual pay uplift assumption'],
+    ['expenditure', 'nonPayInflation', y1(a.expenditure.nonPayInflation), '%', 'Annual non-pay inflation assumption'],
+    ['expenditure', 'ascDemandGrowth', y1(a.expenditure.ascDemandGrowth), '%', 'ASC demand growth assumption'],
+    ['expenditure', 'cscDemandGrowth', y1(a.expenditure.cscDemandGrowth), '%', 'CSC demand growth assumption'],
+    ['expenditure', 'savingsDeliveryRisk', y1(a.expenditure.savingsDeliveryRisk), '%', 'Programme delivery percentage'],
+    ['policy', 'annualSavingsTarget', y1(a.policy.annualSavingsTarget), '£000', 'Policy-level annual savings target'],
+    ['policy', 'reservesUsage', y1(a.policy.reservesUsage), '£000', 'Planned annual reserves usage'],
     ['policy', 'socialCareProtection', String(a.policy.socialCareProtection), 'boolean', 'true/false'],
     ['advanced', 'realTermsToggle', String(a.advanced.realTermsToggle), 'boolean', 'true/false'],
     ['advanced', 'inflationRate', a.advanced.inflationRate, '%', 'Real terms deflator rate'],
@@ -236,11 +237,11 @@ function exampleReadableRows(snapshot: ModelSnapshot): (string | number)[][] {
     ['Headline', 'Structural Gap', result.totalStructuralGap, '£000', 'Recurring pressure'],
     ['Headline', 'Overall Risk Score', result.overallRiskScore, '0-100', 'Higher means greater risk'],
     ['Headline', 'Reserves Exhausted', result.yearReservesExhausted ?? 'No', 'year', 'Resilience indicator'],
-    ['Funding', 'Council Tax Increase', snapshot.assumptions.funding.councilTaxIncrease, '%', 'Annual uplift'],
-    ['Funding', 'Business Rates Growth', snapshot.assumptions.funding.businessRatesGrowth, '%', 'Annual uplift'],
-    ['Expenditure', 'Pay Award', snapshot.assumptions.expenditure.payAward, '%', 'Annual cost pressure'],
-    ['Expenditure', 'ASC Demand Growth', snapshot.assumptions.expenditure.ascDemandGrowth, '%', 'Demand-led pressure'],
-    ['Policy', 'Annual Savings Target', snapshot.assumptions.policy.annualSavingsTarget, '£000', 'Policy lever'],
+    ['Funding', 'Council Tax Increase', y1(snapshot.assumptions.funding.councilTaxIncrease), '%', 'Annual uplift'],
+    ['Funding', 'Business Rates Growth', y1(snapshot.assumptions.funding.businessRatesGrowth), '%', 'Annual uplift'],
+    ['Expenditure', 'Pay Award', y1(snapshot.assumptions.expenditure.payAward), '%', 'Annual cost pressure'],
+    ['Expenditure', 'ASC Demand Growth', y1(snapshot.assumptions.expenditure.ascDemandGrowth), '%', 'Demand-led pressure'],
+    ['Policy', 'Annual Savings Target', y1(snapshot.assumptions.policy.annualSavingsTarget), '£000', 'Policy lever'],
     ['Reserves', 'General Fund', snapshot.baseline.generalFundReserves, '£000', 'Opening balance'],
     ['Reserves', 'Earmarked', snapshot.baseline.earmarkedReserves, '£000', 'Opening balance'],
     ['Programme', 'Savings Proposals Count', snapshot.savingsProposals.length, 'count', 'Configured proposals'],

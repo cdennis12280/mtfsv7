@@ -1,8 +1,9 @@
 import React from 'react';
-import { Activity, BarChart3, Database, TrendingDown, PiggyBank, ShieldCheck, Users, Calculator } from 'lucide-react';
+import { Activity, BarChart3, Database, TrendingDown, PiggyBank, ShieldCheck, Users, Calculator, Presentation, UserCheck } from 'lucide-react';
 import { useMTFSStore } from '../store/mtfsStore';
 import clsx from 'clsx';
 import { RichTooltip } from './ui/RichTooltip';
+import { ROLE_PRESETS, saveStateLabel } from '../utils/uiUx';
 
 const TABS = [
   { id: 'summary', label: 'Summary', icon: <BarChart3 size={13} /> },
@@ -19,17 +20,24 @@ export function Header() {
   const {
     activeTab,
     setActiveTab,
-    viewMode,
-    setViewMode,
     activeRole,
-    setActiveRole,
+    rolePreset,
+    setRolePreset,
     result,
     authorityConfig,
+    enterCfoDemoMode,
+    saveState,
+    workflowState,
+    printPreviewMode,
+    setPrintPreviewMode,
   } = useMTFSStore();
 
   const criticalCount = result.insights.filter((i) => i.type === 'critical').length;
   const warningCount = result.insights.filter((i) => i.type === 'warning').length;
-  const visibleTabs = activeRole === 'members' ? TABS.filter((t) => MEMBER_TABS.has(t.id)) : TABS;
+  const visibleTabs = ROLE_PRESETS[rolePreset]?.tabs
+    ? TABS.filter((t) => ROLE_PRESETS[rolePreset].tabs.includes(t.id))
+    : activeRole === 'members' ? TABS.filter((t) => MEMBER_TABS.has(t.id)) : TABS;
+  const confidence = Math.max(0, Math.min(100, 100 - (result.riskFactors.length * 4) - (workflowState.baselineLocked ? 0 : 10) - (workflowState.assumptionsFrozen ? 0 : 5)));
 
   return (
     <div id="top-header" className="border-b border-[rgba(99,179,237,0.08)] bg-[#0a1120]">
@@ -69,37 +77,41 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="hidden xl:flex items-center gap-2 rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] px-2 py-1.5">
+            <span className="text-[9px] uppercase tracking-widest text-[#4a6080]">Confidence</span>
+            <span className={`mono text-[11px] font-bold ${confidence >= 80 ? 'text-[#10b981]' : confidence >= 60 ? 'text-[#f59e0b]' : 'text-[#ef4444]'}`}>{confidence}/100</span>
+            <span className="text-[9px] text-[#8ca0c0]">{saveStateLabel(saveState)}</span>
+          </div>
+          <button
+            onClick={enterCfoDemoMode}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[rgba(16,185,129,0.32)] bg-[rgba(16,185,129,0.1)] text-[#10b981] text-[10px] font-bold hover:bg-[rgba(16,185,129,0.18)]"
+            title="Open the 10-minute CFO and Head of Finance demo walkthrough."
+          >
+            <Presentation size={12} />
+            CFO Demo
+          </button>
+          <button
+            onClick={() => setPrintPreviewMode(printPreviewMode === 'none' ? 'cfo_brief' : 'none')}
+            className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[rgba(99,179,237,0.2)] bg-[rgba(99,179,237,0.06)] text-[#8ca0c0] text-[10px] font-bold hover:bg-[rgba(99,179,237,0.1)]"
+          >
+            Preview Pack
+          </button>
           <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
             {([
-              { id: 'finance' as const, label: 'Finance', icon: <Calculator size={11} /> },
-              { id: 'members' as const, label: 'Member', icon: <Users size={11} /> },
+              { id: 'cfo' as const, label: 'CFO/S151', icon: <Calculator size={11} /> },
+              { id: 'head_of_finance' as const, label: 'HoF', icon: <UserCheck size={11} /> },
+              { id: 'councillor' as const, label: 'Cllr', icon: <Users size={11} /> },
             ]).map((role) => (
               <button
                 key={role.id}
-                onClick={() => setActiveRole(role.id)}
+                onClick={() => setRolePreset(role.id)}
                 className={clsx(
                   'flex items-center gap-1 px-2 py-1.5 rounded-md text-[10px] font-semibold transition-all',
-                  activeRole === role.id ? 'bg-[#3b82f6] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
+                  rolePreset === role.id ? 'bg-[#3b82f6] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
                 )}
               >
                 {role.icon}
                 {role.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg p-0.5">
-            <RichTooltip content="Switch between strategic summary and full technical finance detail." className="mx-1" />
-            {(['strategic', 'technical'] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                title={mode === 'strategic' ? 'Strategic view for leadership and members.' : 'Technical view with full finance detail.'}
-                className={clsx(
-                  'px-3 py-1.5 rounded-md text-[10px] font-semibold capitalize transition-all',
-                  viewMode === mode ? 'bg-[#3b82f6] text-white shadow-sm' : 'text-[#4a6080] hover:text-[#8ca0c0]'
-                )}
-              >
-                {mode} View
               </button>
             ))}
           </div>
@@ -108,7 +120,7 @@ export function Header() {
 
       {/* Tab navigation */}
       <div id="header-tabs" className="flex items-center px-5 gap-1 overflow-x-auto">
-        {visibleTabs.map((tab, i) => {
+        {visibleTabs.map((tab) => {
             return (
               <React.Fragment key={tab.id}>
                 <button

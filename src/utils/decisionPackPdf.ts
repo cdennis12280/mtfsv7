@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Assumptions, AuthorityConfig, MTFSResult, RiskFactor } from '../types/financial';
+import { y1 } from './yearProfile';
 
 export interface DecisionPackPdfOption {
   label: string;
@@ -272,13 +273,13 @@ export function exportDecisionPackPdf({ authorityConfig, options }: DecisionPack
       headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
       head: [['Key Assumptions', 'Value']],
       body: [
-        ['Council Tax Increase', `${option.assumptions.funding.councilTaxIncrease.toFixed(2)}%`],
-        ['Business Rates Growth', `${option.assumptions.funding.businessRatesGrowth.toFixed(2)}%`],
-        ['Pay Award', `${option.assumptions.expenditure.payAward.toFixed(2)}%`],
-        ['ASC Demand Growth', `${option.assumptions.expenditure.ascDemandGrowth.toFixed(2)}%`],
-        ['Savings Delivery Risk', `${option.assumptions.expenditure.savingsDeliveryRisk.toFixed(1)}%`],
-        ['Annual Savings Target', fmtK(option.assumptions.policy.annualSavingsTarget)],
-        ['Planned Reserves Usage (per year)', fmtK(option.assumptions.policy.reservesUsage)],
+        ['Council Tax Increase', `${y1(option.assumptions.funding.councilTaxIncrease).toFixed(2)}%`],
+        ['Business Rates Growth', `${y1(option.assumptions.funding.businessRatesGrowth).toFixed(2)}%`],
+        ['Pay Award', `${y1(option.assumptions.expenditure.payAward).toFixed(2)}%`],
+        ['ASC Demand Growth', `${y1(option.assumptions.expenditure.ascDemandGrowth).toFixed(2)}%`],
+        ['Savings Delivery Risk', `${y1(option.assumptions.expenditure.savingsDeliveryRisk).toFixed(1)}%`],
+        ['Annual Savings Target', fmtK(y1(option.assumptions.policy.annualSavingsTarget))],
+        ['Planned Reserves Usage (per year)', fmtK(y1(option.assumptions.policy.reservesUsage))],
         ['Social Care Protection', option.assumptions.policy.socialCareProtection ? 'Enabled' : 'Disabled'],
       ],
     });

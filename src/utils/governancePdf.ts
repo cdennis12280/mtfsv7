@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type Styles } from 'jspdf-autotable';
-import type { Assumptions, AuthorityConfig, BaselineData, MTFSResult, SavingsProposal } from '../types/financial';
+import type { Assumptions, AuthorityConfig, BaselineData, MTFSResult, SavingsProposal, YearProfile5 } from '../types/financial';
 import { runCalculations } from '../engine/calculations';
 
 const PAGE_MARGIN = 36;
@@ -20,6 +20,11 @@ function fmtChartValue(v: number) {
 
 function fmtPct(v: number, dp = 1) {
   return `${v.toFixed(dp)}%`;
+}
+
+function y1(v: YearProfile5 | number): number {
+  if (typeof v === 'number') return v;
+  return Number(v?.y1 ?? 0);
 }
 
 function boolText(v: boolean) {
@@ -207,31 +212,31 @@ function buildComparatorScenarios(
     ...assumptions,
     funding: {
       ...assumptions.funding,
-      councilTaxIncrease: assumptions.funding.councilTaxIncrease + 0.5,
-      businessRatesGrowth: assumptions.funding.businessRatesGrowth + 0.6,
-      grantVariation: assumptions.funding.grantVariation + 0.8,
+      councilTaxIncrease: y1(assumptions.funding.councilTaxIncrease) + 0.5,
+      businessRatesGrowth: y1(assumptions.funding.businessRatesGrowth) + 0.6,
+      grantVariation: y1(assumptions.funding.grantVariation) + 0.8,
     },
     expenditure: {
       ...assumptions.expenditure,
-      payAward: Math.max(0, assumptions.expenditure.payAward - 0.6),
-      nonPayInflation: Math.max(0, assumptions.expenditure.nonPayInflation - 0.6),
-      savingsDeliveryRisk: Math.min(100, assumptions.expenditure.savingsDeliveryRisk + 8),
+      payAward: Math.max(0, y1(assumptions.expenditure.payAward) - 0.6),
+      nonPayInflation: Math.max(0, y1(assumptions.expenditure.nonPayInflation) - 0.6),
+      savingsDeliveryRisk: Math.min(100, y1(assumptions.expenditure.savingsDeliveryRisk) + 8),
     },
   };
   const stress: Assumptions = {
     ...assumptions,
     funding: {
       ...assumptions.funding,
-      councilTaxIncrease: Math.max(0, assumptions.funding.councilTaxIncrease - 0.75),
-      businessRatesGrowth: assumptions.funding.businessRatesGrowth - 1.0,
-      grantVariation: assumptions.funding.grantVariation - 1.0,
+      councilTaxIncrease: Math.max(0, y1(assumptions.funding.councilTaxIncrease) - 0.75),
+      businessRatesGrowth: y1(assumptions.funding.businessRatesGrowth) - 1.0,
+      grantVariation: y1(assumptions.funding.grantVariation) - 1.0,
     },
     expenditure: {
       ...assumptions.expenditure,
-      payAward: assumptions.expenditure.payAward + 1.0,
-      nonPayInflation: assumptions.expenditure.nonPayInflation + 1.0,
-      ascDemandGrowth: assumptions.expenditure.ascDemandGrowth + 1.5,
-      savingsDeliveryRisk: Math.max(30, assumptions.expenditure.savingsDeliveryRisk - 12),
+      payAward: y1(assumptions.expenditure.payAward) + 1.0,
+      nonPayInflation: y1(assumptions.expenditure.nonPayInflation) + 1.0,
+      ascDemandGrowth: y1(assumptions.expenditure.ascDemandGrowth) + 1.5,
+      savingsDeliveryRisk: Math.max(30, y1(assumptions.expenditure.savingsDeliveryRisk) - 12),
     },
   };
   return [
@@ -528,15 +533,15 @@ export function exportCommitteeReportPdf(
     startY: y,
     columnStyles: { 0: { fontStyle: 'bold', cellWidth: 220 } },
     body: [
-      ['Council Tax Increase', fmtPct(assumptions.funding.councilTaxIncrease, 2)],
-      ['Business Rates Growth', fmtPct(assumptions.funding.businessRatesGrowth, 2)],
-      ['Grant Variation', fmtPct(assumptions.funding.grantVariation, 2)],
-      ['Fees & Charges Growth', fmtPct(assumptions.funding.feesChargesElasticity, 2)],
-      ['Pay Award', fmtPct(assumptions.expenditure.payAward, 2)],
-      ['Non-Pay Inflation', fmtPct(assumptions.expenditure.nonPayInflation, 2)],
-      ['ASC Demand Growth', fmtPct(assumptions.expenditure.ascDemandGrowth, 2)],
-      ['CSC Demand Growth', fmtPct(assumptions.expenditure.cscDemandGrowth, 2)],
-      ['Savings Delivery Risk', fmtPct(assumptions.expenditure.savingsDeliveryRisk, 1)],
+      ['Council Tax Increase', fmtPct(y1(assumptions.funding.councilTaxIncrease), 2)],
+      ['Business Rates Growth', fmtPct(y1(assumptions.funding.businessRatesGrowth), 2)],
+      ['Grant Variation', fmtPct(y1(assumptions.funding.grantVariation), 2)],
+      ['Fees & Charges Growth', fmtPct(y1(assumptions.funding.feesChargesElasticity), 2)],
+      ['Pay Award', fmtPct(y1(assumptions.expenditure.payAward), 2)],
+      ['Non-Pay Inflation', fmtPct(y1(assumptions.expenditure.nonPayInflation), 2)],
+      ['ASC Demand Growth', fmtPct(y1(assumptions.expenditure.ascDemandGrowth), 2)],
+      ['CSC Demand Growth', fmtPct(y1(assumptions.expenditure.cscDemandGrowth), 2)],
+      ['Savings Delivery Risk', fmtPct(y1(assumptions.expenditure.savingsDeliveryRisk), 1)],
       ['Savings Proposals', String(savingsProposals.length)],
       ['Custom Service Lines', String(baseline.customServiceLines.length)],
       ['Named Reserves', String(baseline.namedReserves.length)],
@@ -614,12 +619,12 @@ export function exportCommitteeReportPdf(
   if (result.reservesToNetBudget < 5) qualificationPoints.push(`Reserves-to-budget ratio (${fmtPct(result.reservesToNetBudget, 1)}) is below prudent reference level.`);
   if (result.structuralDeficitFlag) qualificationPoints.push('Structural deficit remains and requires recurring mitigations.');
   if (qualificationPoints.length === 0) qualificationPoints.push('No material qualification points flagged under current assumptions.');
-  sy = renderPremiumTable(doc, {
+  renderPremiumTable(doc, {
     startY: sy,
     head: [['Qualification Checklist']],
     body: qualificationPoints.map((point) => [point]),
     fontSize: 8.7,
-  }) + 8;
+  });
 
   doc.addPage();
   let ay = PAGE_MARGIN;
@@ -651,7 +656,7 @@ export function exportCommitteeReportPdf(
     ],
     fontSize: 8.2,
   }) + 8;
-  ay = writeParagraph(
+  writeParagraph(
     doc,
     ay,
     'Limitations and assurance: model outputs support decision-making and do not replace Section 151 professional judgement. Calibration against authority accounts and treasury strategy is required before statutory sign-off.',
@@ -799,7 +804,7 @@ export function exportCommitteeReportPdf(
       head: [['Reserve', 'Type', 'Opening', 'Min', 'Contrib Y1..Y5', 'Draw Y1..Y5', 'Purpose']],
       body: baseline.namedReserves.map((r) => [
         r.name || 'Unnamed',
-        r.isEarmarked ? 'Earmarked' : 'General Fund',
+        (r.category ?? (r.isEarmarked ? 'service_specific' : 'general_fund')).replaceAll('_', ' '),
         fmtK(r.openingBalance),
         fmtK(r.minimumBalance),
         r.plannedContributions.map((v) => fmtK(v)).join(' | '),
@@ -845,7 +850,7 @@ export function exportCommitteeReportPdf(
 
   my = ensureSpace(doc, my, 180);
   my = writeSectionTitle(doc, my, 'Insights Register (Complete)');
-  my = renderPremiumTable(doc, {
+  renderPremiumTable(doc, {
     startY: my,
     head: [['Type', 'Title', 'Body', 'Action']],
     body: result.insights.length > 0
@@ -967,6 +972,106 @@ export function exportOnePageMemberBriefPdf(
   doc.save(`MTFS_One_Page_Brief_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
 }
 
+export function exportCfoDemoBriefPdf(
+  result: MTFSResult,
+  assumptions: Assumptions,
+  baseline: BaselineData,
+  savingsProposals: SavingsProposal[],
+  authorityConfig: AuthorityConfig
+) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const now = new Date();
+  const reportDate = resolveReportDate(authorityConfig, now);
+  const scenarioRows = buildComparatorScenarios(result, assumptions, baseline, savingsProposals);
+  const topRisks = [...result.riskFactors].sort((a, b) => b.score - a.score).slice(0, 3);
+
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 118, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(21);
+  doc.text('CFO MTFS Leadership Brief', PAGE_MARGIN, 54);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(`${authorityConfig.authorityName} · ${authorityConfig.reportingPeriod} · ${reportDate.toLocaleDateString('en-GB')}`, PAGE_MARGIN, 76);
+  doc.text('10-minute demo pack: position, drivers, options, assurance and export readiness', PAGE_MARGIN, 94);
+  doc.setTextColor(15, 23, 42);
+
+  let y = 148;
+  y = writeSectionTitle(doc, y, 'Executive Position');
+  y = writeParagraph(
+    doc,
+    y,
+    result.totalGap <= 0
+      ? `The current MTFS is modelled as balanced over five years, with Year 5 reserves of ${fmtK(result.years[4]?.totalClosingReserves ?? 0)} and risk score ${result.overallRiskScore.toFixed(0)}/100.`
+      : `The current MTFS shows a ${fmtK(result.totalGap)} five-year gap and a recurring structural gap of ${fmtK(result.totalStructuralGap)}. Average annual action required is ${fmtK(result.requiredSavingsToBalance)}.`
+  );
+  y += 8;
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 9.2, cellPadding: 4.2 },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+    head: [['Metric', 'Position', 'CFO readout']],
+    body: [
+      ['5-year gap', fmtK(result.totalGap), result.totalGap <= 0 ? 'Balanced under current assumptions.' : 'Requires recurring action and delivery grip.'],
+      ['Annual action', fmtK(result.requiredSavingsToBalance), 'Average annual mitigation needed to remove positive gaps.'],
+      ['Year 5 reserves', fmtK(result.years[4]?.totalClosingReserves ?? 0), result.yearReservesExhausted ? `Exhausted by ${result.yearReservesExhausted}.` : `${result.reservesToNetBudget.toFixed(1)}% of net funding.`],
+      ['Risk score', `${result.overallRiskScore.toFixed(0)}/100`, `${riskBand(result.overallRiskScore)} risk band.`],
+      ['Savings programme', `${savingsProposals.length} lines`, `${fmtK(result.years.reduce((sum, yr) => sum + yr.deliveredSavings, 0))} risk-adjusted delivery modelled.`],
+    ],
+  });
+  y = finalY(doc, y) + 10;
+
+  y = ensureSpace(doc, y, 160);
+  y = writeSectionTitle(doc, y, 'Scenario Decision View');
+  autoTable(doc, {
+    startY: y,
+    margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+    styles: { fontSize: 8.4, cellPadding: 3.8 },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold' },
+    head: [['Option', 'Gap', 'Annual action', 'Y5 reserves', 'Risk', 'Narrative']],
+    body: scenarioRows.map((scenario) => [
+      scenario.name,
+      fmtK(scenario.result.totalGap),
+      fmtK(scenario.result.requiredSavingsToBalance),
+      fmtK(scenario.result.years[4]?.totalClosingReserves ?? 0),
+      `${scenario.result.overallRiskScore.toFixed(0)}/100`,
+      scenario.note,
+    ]),
+  });
+  y = finalY(doc, y) + 10;
+
+  y = ensureSpace(doc, y, 140);
+  y = writeSectionTitle(doc, y, 'Top Finance Leadership Risks');
+  topRisks.forEach((risk, idx) => {
+    y = writeParagraph(doc, y, `${idx + 1}. ${risk.name}: ${risk.score}/100 (${risk.level.toUpperCase()}) - ${risk.description}`, 8.8);
+  });
+  y += 8;
+  y = writeCallout(
+    doc,
+    y,
+    'Recommended Close',
+    result.totalGap <= 0
+      ? 'Ask leadership to endorse the current plan as the working base, with explicit delivery tracking and reserve monitoring.'
+      : 'Ask leadership to endorse the recommended scenario as the working base, commission recurring savings delivery assurance, and maintain a funding shock contingency.',
+    result.totalGap <= 0 ? 'blue' : 'amber'
+  );
+
+  y = ensureSpace(doc, y + 8, 110);
+  y = writeSectionTitle(doc, y, 'Assurance Evidence');
+  [
+    `Assumptions use five-year profiles; Year 1 reference values include pay ${fmtPct(y1(assumptions.expenditure.payAward))}, non-pay ${fmtPct(y1(assumptions.expenditure.nonPayInflation))}, grant variation ${fmtPct(y1(assumptions.funding.grantVariation))}.`,
+    'Calculation trace links visible KPIs to funding, expenditure, savings, reserves and structural gap outputs.',
+    'Governance exports are decision-support evidence and do not replace Section 151 professional judgement.',
+  ].forEach((line) => {
+    y = writeParagraph(doc, y, line, 8.8);
+  });
+
+  addFooter(doc, authorityConfig.authorityName, now);
+  doc.save(`MTFS_CFO_Brief_${sanitize(authorityConfig.authorityName)}_${now.toISOString().slice(0, 10)}.pdf`);
+}
+
 export function exportPremiumBriefPdf(
   result: MTFSResult,
   assumptions: Assumptions,
@@ -1068,11 +1173,11 @@ export function exportPremiumBriefPdf(
     headStyles: { fillColor: [51, 65, 85], textColor: 255, fontStyle: 'bold' },
     head: [['Driver', 'Value', 'Implication']],
     body: [
-      ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}%`, 'Core recurrent funding uplift.'],
-      ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(2)}%`, 'Locally retained business-rate trajectory.'],
-      ['Pay Award', `${assumptions.expenditure.payAward.toFixed(2)}%`, 'Main workforce cost pressure.'],
-      ['ASC Demand Growth', `${assumptions.expenditure.ascDemandGrowth.toFixed(2)}%`, 'Demand-led spending growth in social care.'],
-      ['Savings Delivery Risk', `${assumptions.expenditure.savingsDeliveryRisk.toFixed(1)}%`, 'Programme delivery haircut in forecasts.'],
+      ['Council Tax Increase', `${y1(assumptions.funding.councilTaxIncrease).toFixed(2)}%`, 'Core recurrent funding uplift.'],
+      ['Business Rates Growth', `${y1(assumptions.funding.businessRatesGrowth).toFixed(2)}%`, 'Locally retained business-rate trajectory.'],
+      ['Pay Award', `${y1(assumptions.expenditure.payAward).toFixed(2)}%`, 'Main workforce cost pressure.'],
+      ['ASC Demand Growth', `${y1(assumptions.expenditure.ascDemandGrowth).toFixed(2)}%`, 'Demand-led spending growth in social care.'],
+      ['Savings Delivery Risk', `${y1(assumptions.expenditure.savingsDeliveryRisk).toFixed(1)}%`, 'Programme delivery haircut in forecasts.'],
       ['Named Reserves', `${baseline.namedReserves.length}`, 'Granularity of reserve tracking.'],
       ['Custom Service Lines', `${baseline.customServiceLines.length}`, 'Service disaggregation depth.'],
     ],

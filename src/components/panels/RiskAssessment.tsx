@@ -6,8 +6,8 @@ import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { RiskBadge } from '../ui/Badge';
 import { AlertTriangle, Shield, Activity } from 'lucide-react';
-import { computeSensitivity, computeMonteCarlo } from '../../engine/calculations';
-import { DEFAULT_BASELINE } from '../../engine/calculations';
+import { computeSensitivity, computeMonteCarlo, normalizeBaseline } from '../../engine/calculations';
+import { y1 } from '../../utils/yearProfile';
 
 function fmtK(v: number) {
   const sign = v > 0 ? '+' : '';
@@ -24,6 +24,7 @@ const RISK_COLORS: Record<string, string> = {
 
 export function RiskAssessment() {
   const { result, assumptions, baseline, savingsProposals, peerBenchmark, setPeerBenchmark, authorityConfig } = useMTFSStore();
+  const safeBaseline = React.useMemo(() => normalizeBaseline(baseline), [baseline]);
   const { riskFactors, overallRiskScore, years } = result;
 
   const radarData = riskFactors.map((f) => ({
@@ -31,10 +32,10 @@ export function RiskAssessment() {
     score: f.score,
   }));
 
-  const sensitivityData = computeSensitivity(assumptions, baseline || DEFAULT_BASELINE);
+  const sensitivityData = computeSensitivity(assumptions, safeBaseline);
   const monteCarlo = React.useMemo(
-    () => computeMonteCarlo(assumptions, baseline || DEFAULT_BASELINE, savingsProposals, 1500),
-    [assumptions, baseline, savingsProposals]
+    () => computeMonteCarlo(assumptions, safeBaseline, savingsProposals, 1500),
+    [assumptions, safeBaseline, savingsProposals]
   );
 
   const overallLevel = overallRiskScore >= 65 ? 'critical' : overallRiskScore >= 45 ? 'high' : overallRiskScore >= 25 ? 'medium' : 'low';
@@ -42,13 +43,14 @@ export function RiskAssessment() {
   const population = Math.max(1, authorityConfig.population || 1);
   const year5 = years[4] ?? years[years.length - 1];
   const currentNetExpPerCapita = year5 ? (year5.totalExpenditure * 1000) / population : 0;
-  const currentSavingsDeliveryRate = Math.max(0, Math.min(100, assumptions.expenditure.savingsDeliveryRisk));
-  const debtToRevenuePct = baseline?.treasuryIndicators.enabled
-    ? ((baseline.treasuryIndicators.netFinancingNeed / Math.max(1, year5?.totalFunding ?? 1)) * 100)
+  const currentSavingsDeliveryRate = Math.max(0, Math.min(100, y1(assumptions.expenditure.savingsDeliveryRisk)));
+  const currentGrantVariation = y1(assumptions.funding.grantVariation);
+  const debtToRevenuePct = safeBaseline.treasuryIndicators.enabled
+    ? ((safeBaseline.treasuryIndicators.netFinancingNeed / Math.max(1, year5?.totalFunding ?? 1)) * 100)
     : 0;
   const debtBurdenLevel = debtToRevenuePct > 170 ? 'critical' : debtToRevenuePct > 140 ? 'warning' : 'good';
-  const liquidityHeadroomPct = baseline?.treasuryIndicators.enabled
-    ? (((baseline.treasuryIndicators.operationalBoundary - baseline.treasuryIndicators.netFinancingNeed) / Math.max(1, baseline.treasuryIndicators.operationalBoundary)) * 100)
+  const liquidityHeadroomPct = safeBaseline.treasuryIndicators.enabled
+    ? (((safeBaseline.treasuryIndicators.operationalBoundary - safeBaseline.treasuryIndicators.netFinancingNeed) / Math.max(1, safeBaseline.treasuryIndicators.operationalBoundary)) * 100)
     : 0;
   const liquidityLevel = liquidityHeadroomPct < 0 ? 'critical' : liquidityHeadroomPct < 8 ? 'warning' : 'good';
 
@@ -83,9 +85,9 @@ export function RiskAssessment() {
     },
     {
       label: 'Funding Stability',
-      pass: assumptions.funding.grantVariation > -3,
-      detail: assumptions.funding.grantVariation <= -3
-        ? `Grant reduction of ${assumptions.funding.grantVariation}% creates material funding risk`
+      pass: currentGrantVariation > -3,
+      detail: currentGrantVariation <= -3
+        ? `Grant reduction of ${currentGrantVariation}% creates material funding risk`
         : 'Funding assumptions appear stable',
     },
   ];
@@ -382,13 +384,13 @@ export function RiskAssessment() {
           <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
             <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Liquidity Headroom</p>
             <p className={`mono text-[13px] font-bold mt-1 ${liquidityLevel === 'critical' ? 'text-[#ef4444]' : liquidityLevel === 'warning' ? 'text-[#f59e0b]' : 'text-[#10b981]'}`}>
-              {baseline?.treasuryIndicators.enabled ? `${liquidityHeadroomPct.toFixed(1)}%` : 'Not enabled'}
+              {safeBaseline.treasuryIndicators.enabled ? `${liquidityHeadroomPct.toFixed(1)}%` : 'Not enabled'}
             </p>
           </div>
           <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">
             <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">Debt Burden</p>
             <p className={`mono text-[13px] font-bold mt-1 ${debtBurdenLevel === 'critical' ? 'text-[#ef4444]' : debtBurdenLevel === 'warning' ? 'text-[#f59e0b]' : 'text-[#10b981]'}`}>
-              {baseline?.treasuryIndicators.enabled ? `${debtToRevenuePct.toFixed(1)}%` : 'Not enabled'}
+              {safeBaseline.treasuryIndicators.enabled ? `${debtToRevenuePct.toFixed(1)}%` : 'Not enabled'}
             </p>
           </div>
           <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-3">

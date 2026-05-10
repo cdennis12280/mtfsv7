@@ -34,18 +34,6 @@ const PANEL_GUIDE: PanelGuideItem[] = [
     keyInputs: 'Proposal value, delivery year, yearly phasing, achievement rate, RAG and owner.',
   },
   {
-    name: 'Risk',
-    purpose: 'Risk posture dashboard including resilience indicators and stress/benchmark overlays.',
-    keyOutputs: 'Overall risk score, red/amber/green warnings, resilience signals and simulation context.',
-    keyInputs: 'Gap trajectory, reserves adequacy, volatility assumptions, peer benchmark and stress settings.',
-  },
-  {
-    name: 'Drivers',
-    purpose: 'Unified advanced modelling workspace combining assumption-linked modules and technical levers.',
-    keyOutputs: 'Refined projections for workforce, contracts, growth/savings overlays, funding detail and treasury effects.',
-    keyInputs: 'Workforce/pay controls, contract clauses, growth and manual overrides, reserves methodology, treasury/MRP settings.',
-  },
-  {
     name: 'Scenarios',
     purpose: 'Save and compare scenario configurations and model snapshots over time.',
     keyOutputs: 'Named scenarios and snapshots for option comparison and governance evidence.',
@@ -56,12 +44,6 @@ const PANEL_GUIDE: PanelGuideItem[] = [
     purpose: 'Committee/reporting support view with integrated Section151 assurance and technical drill-down.',
     keyOutputs: 'Governance exports, assurance commentary, methodology and controls evidence.',
     keyInputs: 'Whole-model outcomes, authority metadata, assurance indicators.',
-  },
-  {
-    name: 'Help',
-    purpose: 'In-app instruction manual covering workflow, terminology and governance usage.',
-    keyOutputs: 'Operator guidance and onboarding clarity.',
-    keyInputs: 'Reference content only.',
   },
 ];
 
@@ -131,7 +113,7 @@ export function HelpGuide() {
         <SectionCard title="2. Application Layout">
           <div className="space-y-2">
             <p><span className="text-[#f0f4ff] font-semibold">Left Sidebar:</span> assumption engine and authority metadata controls.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Top Header:</span> app navigation tabs plus strategic/technical, audience and density display modes.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Top Header:</span> six-tab navigation and role toggle (Finance/Member).</p>
             <p><span className="text-[#f0f4ff] font-semibold">KPI Bar:</span> headline metrics (gap, risk, reserves and key warning flags).</p>
             <p><span className="text-[#f0f4ff] font-semibold">Main Panel:</span> active workspace selected from the tab bar.</p>
           </div>
@@ -150,13 +132,12 @@ export function HelpGuide() {
           </div>
         </SectionCard>
 
-        <SectionCard title="4. Header Modes And Navigation">
+        <SectionCard title="4. Navigation And Role Views">
           <div className="space-y-2">
-            <p><span className="text-[#f0f4ff] font-semibold">Strategic View:</span> limits visible tabs to leadership-level decision pages.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Technical View:</span> exposes full detailed working panels for finance teams.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Audience Mode:</span> switches language framing between finance-professional and elected-member style.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Density Mode:</span> comfort/compact/presentation display spacing.</p>
-            <p><span className="text-[#f0f4ff] font-semibold">Tab Navigation:</span> selects the active modelling panel.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Tab Navigation:</span> Summary, Baseline, Savings, Reserves, Scenarios and Governance.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Finance Role:</span> sees all six tabs and full modelling controls.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Member Role:</span> sees Summary, Scenarios and Governance only.</p>
+            <p><span className="text-[#f0f4ff] font-semibold">Central Warning Strip:</span> one deduplicated warning line appears under the header for model-wide issues.</p>
           </div>
         </SectionCard>
 
@@ -265,7 +246,7 @@ export function HelpGuide() {
           <div className="flex flex-wrap items-center gap-2">
             <Info size={14} className="text-[#3b82f6]" />
             <p>
-              This guide opens via the header <span className="mono">Help Guide</span> button and runs in a separate window
+              This guide opens at <span className="mono">/#help-guide</span> (or <span className="mono">/help</span>) and can run in a separate window
               so users can read instructions alongside the modelling workspace.
             </p>
           </div>

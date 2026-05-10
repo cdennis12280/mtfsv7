@@ -10,9 +10,10 @@ describe('GovernancePanel', () => {
   it('renders core export actions', () => {
     render(<GovernancePanel />);
 
-    expect(screen.getByText('Export Committee Report PDF')).toBeInTheDocument();
-    expect(screen.getByText('Export One-Page Member Brief PDF')).toBeInTheDocument();
-    expect(screen.getByText('Export Premium Brief PDF')).toBeInTheDocument();
-    expect(screen.getByText('Export Data CSV')).toBeInTheDocument();
+    expect(screen.getByText('Freeze Pack')).toBeInTheDocument();
+    expect(screen.getByText('Readiness Check')).toBeInTheDocument();
+    expect(screen.getByText('Member Brief')).toBeInTheDocument();
+    expect(screen.getByText('S151 Pack')).toBeInTheDocument();
+    expect(screen.getByText('Data CSV')).toBeInTheDocument();
   });
 });

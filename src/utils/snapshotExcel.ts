@@ -3,6 +3,7 @@ import type {
   BaselineData,
   ModelSnapshot,
   Scenario,
+  YearProfile5,
 } from '../types/financial';
 import {
   DEFAULT_ASSUMPTIONS,
@@ -10,8 +11,11 @@ import {
   DEFAULT_BASELINE,
   runCalculations,
 } from '../engine/calculations';
+import { coerceYearProfile, y1 } from './yearProfile';
+import { migratePaySpineRowsToWorkforcePosts } from './workforcePay';
 type XlsxModule = typeof import('xlsx');
 type Worksheet = ReturnType<XlsxModule['utils']['aoa_to_sheet']>;
+type SheetCell = string | number | boolean;
 
 const SHEET_META = 'Meta';
 const SHEET_AUTHORITY = 'AuthorityConfig';
@@ -23,6 +27,7 @@ const SHEET_RESERVES = 'NamedReserves';
 const SHEET_CUSTOM_LINES = 'CustomServiceLines';
 const SHEET_GRANTS = 'GrantSchedule';
 const SHEET_PAY_SPINE = 'PaySpine';
+const SHEET_WORKFORCE_POSTS = 'WorkforcePosts';
 const SHEET_CONTRACTS = 'Contracts';
 const SHEET_INVEST = 'InvestToSave';
 const SHEET_INCOME = 'IncomeLines';
@@ -38,7 +43,7 @@ const EDITABLE_SHEETS = new Set([
   SHEET_RESERVES,
   SHEET_CUSTOM_LINES,
   SHEET_GRANTS,
-  SHEET_PAY_SPINE,
+  SHEET_WORKFORCE_POSTS,
   SHEET_CONTRACTS,
   SHEET_INVEST,
   SHEET_INCOME,
@@ -84,7 +89,7 @@ function getRows<T extends Record<string, unknown>>(xlsx: XlsxModule, workbook: 
   return xlsx.utils.sheet_to_json(sheet, { defval: '' }) as T[];
 }
 
-function inferColumnWidths(rows: (string | number)[][], min = 12, max = 44): Array<{ wch: number }> {
+function inferColumnWidths(rows: SheetCell[][], min = 12, max = 44): Array<{ wch: number }> {
   const columns = rows.reduce((m, r) => Math.max(m, r.length), 0);
   const widths: Array<{ wch: number }> = [];
   for (let col = 0; col < columns; col += 1) {
@@ -99,7 +104,7 @@ function inferColumnWidths(rows: (string | number)[][], min = 12, max = 44): Arr
   return widths;
 }
 
-function configureSheet(sheet: Worksheet, sheetName: string, rows: (string | number)[][]): Worksheet {
+function configureSheet(sheet: Worksheet, sheetName: string, rows: SheetCell[][]): Worksheet {
   sheet['!cols'] = inferColumnWidths(rows);
   if (rows.length > 1 && rows[0].length > 0 && sheet['!ref']) {
     const lastColumn = rows[0].length - 1;
@@ -139,30 +144,36 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
   ];
 
   const a = snapshot.assumptions;
-  const assumptionsRows = [
-    ['section', 'field', 'value', 'unit'],
-    ['funding', 'councilTaxIncrease', a.funding.councilTaxIncrease, '%'],
-    ['funding', 'businessRatesGrowth', a.funding.businessRatesGrowth, '%'],
-    ['funding', 'grantVariation', a.funding.grantVariation, '%'],
-    ['funding', 'feesChargesElasticity', a.funding.feesChargesElasticity, '%'],
-    ['expenditure', 'payAward', a.expenditure.payAward, '%'],
-    ['expenditure', 'nonPayInflation', a.expenditure.nonPayInflation, '%'],
-    ['expenditure', 'ascDemandGrowth', a.expenditure.ascDemandGrowth, '%'],
-    ['expenditure', 'cscDemandGrowth', a.expenditure.cscDemandGrowth, '%'],
-    ['expenditure', 'savingsDeliveryRisk', a.expenditure.savingsDeliveryRisk, '%'],
-    ['expenditure', 'payAwardByFundingSource.general_fund', a.expenditure.payAwardByFundingSource.general_fund, '%'],
-    ['expenditure', 'payAwardByFundingSource.grant', a.expenditure.payAwardByFundingSource.grant, '%'],
-    ['expenditure', 'payAwardByFundingSource.other', a.expenditure.payAwardByFundingSource.other, '%'],
-    ['expenditure', 'payGroupSensitivity.default', a.expenditure.payGroupSensitivity.default, 'pp'],
-    ['expenditure', 'payGroupSensitivity.teachers', a.expenditure.payGroupSensitivity.teachers, 'pp'],
-    ['expenditure', 'payGroupSensitivity.njc', a.expenditure.payGroupSensitivity.njc, 'pp'],
-    ['expenditure', 'payGroupSensitivity.senior', a.expenditure.payGroupSensitivity.senior, 'pp'],
-    ['expenditure', 'payGroupSensitivity.other', a.expenditure.payGroupSensitivity.other, 'pp'],
-    ['policy', 'annualSavingsTarget', a.policy.annualSavingsTarget, '£000'],
-    ['policy', 'reservesUsage', a.policy.reservesUsage, '£000'],
-    ['policy', 'socialCareProtection', String(a.policy.socialCareProtection), 'boolean'],
-    ['advanced', 'realTermsToggle', String(a.advanced.realTermsToggle), 'boolean'],
-    ['advanced', 'inflationRate', a.advanced.inflationRate, '%'],
+  const profileRow = (section: string, field: string, value: unknown, unit: string): SheetCell[] => {
+    const p = coerceYearProfile(value, 0);
+    return [section, field, p.y1, p.y2, p.y3, p.y4, p.y5, unit];
+  };
+  const scalarRow = (section: string, field: string, value: SheetCell, unit: string): SheetCell[] =>
+    [section, field, value, '', '', '', '', unit];
+  const assumptionsRows: SheetCell[][] = [
+    ['section', 'field', 'y1', 'y2', 'y3', 'y4', 'y5', 'unit'],
+    profileRow('funding', 'councilTaxIncrease', a.funding.councilTaxIncrease, '%'),
+    profileRow('funding', 'businessRatesGrowth', a.funding.businessRatesGrowth, '%'),
+    profileRow('funding', 'grantVariation', a.funding.grantVariation, '%'),
+    profileRow('funding', 'feesChargesElasticity', a.funding.feesChargesElasticity, '%'),
+    profileRow('expenditure', 'payAward', a.expenditure.payAward, '%'),
+    profileRow('expenditure', 'nonPayInflation', a.expenditure.nonPayInflation, '%'),
+    profileRow('expenditure', 'ascDemandGrowth', a.expenditure.ascDemandGrowth, '%'),
+    profileRow('expenditure', 'cscDemandGrowth', a.expenditure.cscDemandGrowth, '%'),
+    profileRow('expenditure', 'savingsDeliveryRisk', a.expenditure.savingsDeliveryRisk, '%'),
+    scalarRow('expenditure', 'payAwardByFundingSource.general_fund', a.expenditure.payAwardByFundingSource.general_fund, '%'),
+    scalarRow('expenditure', 'payAwardByFundingSource.grant', a.expenditure.payAwardByFundingSource.grant, '%'),
+    scalarRow('expenditure', 'payAwardByFundingSource.other', a.expenditure.payAwardByFundingSource.other, '%'),
+    scalarRow('expenditure', 'payGroupSensitivity.default', a.expenditure.payGroupSensitivity.default, 'pp'),
+    scalarRow('expenditure', 'payGroupSensitivity.teachers', a.expenditure.payGroupSensitivity.teachers, 'pp'),
+    scalarRow('expenditure', 'payGroupSensitivity.njc', a.expenditure.payGroupSensitivity.njc, 'pp'),
+    scalarRow('expenditure', 'payGroupSensitivity.senior', a.expenditure.payGroupSensitivity.senior, 'pp'),
+    scalarRow('expenditure', 'payGroupSensitivity.other', a.expenditure.payGroupSensitivity.other, 'pp'),
+    profileRow('policy', 'annualSavingsTarget', a.policy.annualSavingsTarget, '£000'),
+    profileRow('policy', 'reservesUsage', a.policy.reservesUsage, '£000'),
+    scalarRow('policy', 'socialCareProtection', String(a.policy.socialCareProtection), 'boolean'),
+    scalarRow('advanced', 'realTermsToggle', String(a.advanced.realTermsToggle), 'boolean'),
+    scalarRow('advanced', 'inflationRate', a.advanced.inflationRate, '%'),
   ];
 
   const b = snapshot.baseline;
@@ -191,6 +202,21 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
     ['councilTaxBaseConfig.parishPrecepts', b.councilTaxBaseConfig.parishPrecepts, '£000'],
     ['councilTaxBaseConfig.corePreceptPct', b.councilTaxBaseConfig.corePreceptPct, '%'],
     ['councilTaxBaseConfig.ascPreceptPct', b.councilTaxBaseConfig.ascPreceptPct, '%'],
+    ['councilTaxBaseConfig.collectionFundSurplusDeficit', b.councilTaxBaseConfig.collectionFundSurplusDeficit, '£000'],
+    ['businessRatesConfig.enabled', String(b.businessRatesConfig.enabled), 'boolean'],
+    ['businessRatesConfig.baselineRates', b.businessRatesConfig.baselineRates, '£000'],
+    ['businessRatesConfig.growthRate.y1', b.businessRatesConfig.growthRate.y1, '%'],
+    ['businessRatesConfig.growthRate.y2', b.businessRatesConfig.growthRate.y2, '%'],
+    ['businessRatesConfig.growthRate.y3', b.businessRatesConfig.growthRate.y3, '%'],
+    ['businessRatesConfig.growthRate.y4', b.businessRatesConfig.growthRate.y4, '%'],
+    ['businessRatesConfig.growthRate.y5', b.businessRatesConfig.growthRate.y5, '%'],
+    ['businessRatesConfig.appealsProvision', b.businessRatesConfig.appealsProvision, '£000'],
+    ['businessRatesConfig.tariffTopUp', b.businessRatesConfig.tariffTopUp, '£000'],
+    ['businessRatesConfig.levySafetyNet', b.businessRatesConfig.levySafetyNet, '£000'],
+    ['businessRatesConfig.poolingGain', b.businessRatesConfig.poolingGain, '£000'],
+    ['businessRatesConfig.collectionFundAdjustment', b.businessRatesConfig.collectionFundAdjustment, '£000'],
+    ['businessRatesConfig.resetAdjustment', b.businessRatesConfig.resetAdjustment, '£000'],
+    ['businessRatesConfig.resetYear', b.businessRatesConfig.resetYear, 'year 1-5'],
     ['ascCohortModel.enabled', String(b.ascCohortModel.enabled), 'boolean'],
     ['ascCohortModel.population18to64', b.ascCohortModel.population18to64, 'count'],
     ['ascCohortModel.population65plus', b.ascCohortModel.population65plus, 'count'],
@@ -231,8 +257,33 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
     ['mrpCalculator.baseBorrowing', b.mrpCalculator.baseBorrowing, '£000'],
     ['mrpCalculator.assetLifeYears', b.mrpCalculator.assetLifeYears, 'years'],
     ['mrpCalculator.annuityRate', b.mrpCalculator.annuityRate, '%'],
-    ['paySpineConfig.enabled', String(b.paySpineConfig.enabled), 'boolean'],
+    ['workforceModel.enabled', String(b.workforceModel.posts.length > 0), 'boolean'],
     ['contractIndexationTracker.enabled', String(b.contractIndexationTracker.enabled), 'boolean'],
+    ['contractIndexationTracker.indexAssumptions.cpi.y1', b.contractIndexationTracker.indexAssumptions.cpi.y1, '%'],
+    ['contractIndexationTracker.indexAssumptions.cpi.y2', b.contractIndexationTracker.indexAssumptions.cpi.y2, '%'],
+    ['contractIndexationTracker.indexAssumptions.cpi.y3', b.contractIndexationTracker.indexAssumptions.cpi.y3, '%'],
+    ['contractIndexationTracker.indexAssumptions.cpi.y4', b.contractIndexationTracker.indexAssumptions.cpi.y4, '%'],
+    ['contractIndexationTracker.indexAssumptions.cpi.y5', b.contractIndexationTracker.indexAssumptions.cpi.y5, '%'],
+    ['contractIndexationTracker.indexAssumptions.rpi.y1', b.contractIndexationTracker.indexAssumptions.rpi.y1, '%'],
+    ['contractIndexationTracker.indexAssumptions.rpi.y2', b.contractIndexationTracker.indexAssumptions.rpi.y2, '%'],
+    ['contractIndexationTracker.indexAssumptions.rpi.y3', b.contractIndexationTracker.indexAssumptions.rpi.y3, '%'],
+    ['contractIndexationTracker.indexAssumptions.rpi.y4', b.contractIndexationTracker.indexAssumptions.rpi.y4, '%'],
+    ['contractIndexationTracker.indexAssumptions.rpi.y5', b.contractIndexationTracker.indexAssumptions.rpi.y5, '%'],
+    ['contractIndexationTracker.indexAssumptions.nmw.y1', b.contractIndexationTracker.indexAssumptions.nmw.y1, '%'],
+    ['contractIndexationTracker.indexAssumptions.nmw.y2', b.contractIndexationTracker.indexAssumptions.nmw.y2, '%'],
+    ['contractIndexationTracker.indexAssumptions.nmw.y3', b.contractIndexationTracker.indexAssumptions.nmw.y3, '%'],
+    ['contractIndexationTracker.indexAssumptions.nmw.y4', b.contractIndexationTracker.indexAssumptions.nmw.y4, '%'],
+    ['contractIndexationTracker.indexAssumptions.nmw.y5', b.contractIndexationTracker.indexAssumptions.nmw.y5, '%'],
+    ['contractIndexationTracker.indexAssumptions.fixed.y1', b.contractIndexationTracker.indexAssumptions.fixed.y1, '%'],
+    ['contractIndexationTracker.indexAssumptions.fixed.y2', b.contractIndexationTracker.indexAssumptions.fixed.y2, '%'],
+    ['contractIndexationTracker.indexAssumptions.fixed.y3', b.contractIndexationTracker.indexAssumptions.fixed.y3, '%'],
+    ['contractIndexationTracker.indexAssumptions.fixed.y4', b.contractIndexationTracker.indexAssumptions.fixed.y4, '%'],
+    ['contractIndexationTracker.indexAssumptions.fixed.y5', b.contractIndexationTracker.indexAssumptions.fixed.y5, '%'],
+    ['contractIndexationTracker.indexAssumptions.bespoke.y1', b.contractIndexationTracker.indexAssumptions.bespoke.y1, '%'],
+    ['contractIndexationTracker.indexAssumptions.bespoke.y2', b.contractIndexationTracker.indexAssumptions.bespoke.y2, '%'],
+    ['contractIndexationTracker.indexAssumptions.bespoke.y3', b.contractIndexationTracker.indexAssumptions.bespoke.y3, '%'],
+    ['contractIndexationTracker.indexAssumptions.bespoke.y4', b.contractIndexationTracker.indexAssumptions.bespoke.y4, '%'],
+    ['contractIndexationTracker.indexAssumptions.bespoke.y5', b.contractIndexationTracker.indexAssumptions.bespoke.y5, '%'],
     ['investToSave.enabled', String(b.investToSave.enabled), 'boolean'],
     ['incomeGenerationWorkbook.enabled', String(b.incomeGenerationWorkbook.enabled), 'boolean'],
   ];
@@ -259,13 +310,14 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
   ];
 
   const namedReserveRows = [
-    ['id', 'name', 'purpose', 'openingBalance', 'isEarmarked', 'minimumBalance', 'contribY1', 'contribY2', 'contribY3', 'contribY4', 'contribY5', 'drawY1', 'drawY2', 'drawY3', 'drawY4', 'drawY5'],
+    ['id', 'name', 'purpose', 'category', 'openingBalance', 'isEarmarked', 'minimumBalance', 'contribY1', 'contribY2', 'contribY3', 'contribY4', 'contribY5', 'drawY1', 'drawY2', 'drawY3', 'drawY4', 'drawY5'],
     ...b.namedReserves.map((r) => [
       r.id,
       r.name,
       r.purpose,
+      r.category ?? (r.isEarmarked ? 'service_specific' : 'general_fund'),
       r.openingBalance,
-      String(r.isEarmarked),
+      String((r.category ?? (r.isEarmarked ? 'service_specific' : 'general_fund')) !== 'general_fund'),
       r.minimumBalance,
       r.plannedContributions[0],
       r.plannedContributions[1],
@@ -296,19 +348,31 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
   ];
 
   const grantRows = [
-    ['id', 'name', 'value', 'certainty', 'endYear'],
-    ...b.grantSchedule.map((g) => [g.id, g.name, g.value, g.certainty, g.endYear]),
+    ['id', 'name', 'value', 'certainty', 'endYear', 'ringfenced', 'inflationLinked', 'replacementAssumption'],
+    ...b.grantSchedule.map((g) => [g.id, g.name, g.value, g.certainty, g.endYear, String(g.ringfenced ?? false), String(g.inflationLinked ?? false), g.replacementAssumption ?? 0]),
   ];
 
-  const paySpineRows = [
-    ['id', 'grade', 'fte', 'spinePointCost'],
-    ...b.paySpineConfig.rows.map((r) => [r.id, r.grade, r.fte, r.spinePointCost]),
+  const workforceRows = [
+    ['id', 'postId', 'service', 'fte', 'fundingSource', 'annualCost', 'payAssumptionGroup', 'vacancyFactor', 'generalFundSplit', 'grantFundSplit', 'otherSplit'],
+    ...b.workforceModel.posts.map((p) => [
+      p.id,
+      p.postId,
+      p.service,
+      p.fte,
+      p.fundingSource,
+      p.annualCost,
+      p.payAssumptionGroup,
+      p.vacancyFactor ?? 0,
+      p.generalFundSplit ?? 0,
+      p.grantFundSplit ?? 0,
+      p.otherSplit ?? 0,
+    ]),
   ];
 
   const contractRows = [
-    ['id', 'name', 'value', 'clause', 'bespokeRate', 'effectiveFromYear', 'reviewMonth', 'upliftMethod', 'fixedRate', 'customRate', 'phaseInMonths'],
+    ['id', 'name', 'supplier', 'service', 'fundingSource', 'value', 'clause', 'bespokeRate', 'effectiveFromYear', 'nextUpliftYear', 'reviewMonth', 'upliftMethod', 'fixedRate', 'customRate', 'capRate', 'collarRate', 'phaseInMonths'],
     ...b.contractIndexationTracker.contracts.map((c) => [
-      c.id, c.name, c.value, c.clause, c.bespokeRate, c.effectiveFromYear, c.reviewMonth, c.upliftMethod, c.fixedRate, c.customRate, c.phaseInMonths,
+      c.id, c.name, c.supplier ?? '', c.service ?? '', c.fundingSource ?? 'general_fund', c.value, c.clause, c.bespokeRate, c.effectiveFromYear, c.nextUpliftYear ?? c.effectiveFromYear, c.reviewMonth, c.upliftMethod, c.fixedRate, c.customRate, c.capRate ?? 0, c.collarRate ?? 0, c.phaseInMonths,
     ]),
   ];
 
@@ -331,15 +395,15 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
       s.type,
       s.color,
       s.createdAt,
-      s.assumptions.funding.councilTaxIncrease,
-      s.assumptions.funding.businessRatesGrowth,
-      s.assumptions.funding.grantVariation,
-      s.assumptions.funding.feesChargesElasticity,
-      s.assumptions.expenditure.payAward,
-      s.assumptions.expenditure.nonPayInflation,
-      s.assumptions.expenditure.ascDemandGrowth,
-      s.assumptions.expenditure.cscDemandGrowth,
-      s.assumptions.expenditure.savingsDeliveryRisk,
+      y1(s.assumptions.funding.councilTaxIncrease),
+      y1(s.assumptions.funding.businessRatesGrowth),
+      y1(s.assumptions.funding.grantVariation),
+      y1(s.assumptions.funding.feesChargesElasticity),
+      y1(s.assumptions.expenditure.payAward),
+      y1(s.assumptions.expenditure.nonPayInflation),
+      y1(s.assumptions.expenditure.ascDemandGrowth),
+      y1(s.assumptions.expenditure.cscDemandGrowth),
+      y1(s.assumptions.expenditure.savingsDeliveryRisk),
       s.assumptions.expenditure.payAwardByFundingSource.general_fund,
       s.assumptions.expenditure.payAwardByFundingSource.grant,
       s.assumptions.expenditure.payAwardByFundingSource.other,
@@ -348,8 +412,8 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
       s.assumptions.expenditure.payGroupSensitivity.njc,
       s.assumptions.expenditure.payGroupSensitivity.senior,
       s.assumptions.expenditure.payGroupSensitivity.other,
-      s.assumptions.policy.annualSavingsTarget,
-      s.assumptions.policy.reservesUsage,
+      y1(s.assumptions.policy.annualSavingsTarget),
+      y1(s.assumptions.policy.reservesUsage),
       String(s.assumptions.policy.socialCareProtection),
       String(s.assumptions.advanced.realTermsToggle),
       s.assumptions.advanced.inflationRate,
@@ -378,7 +442,7 @@ function buildEditableWorkbookRows(snapshot: ModelSnapshot) {
     namedReserveRows,
     customLineRows,
     grantRows,
-    paySpineRows,
+    workforceRows,
     contractRows,
     investRows,
     incomeRows,
@@ -397,6 +461,21 @@ function applySettingPath(baseline: BaselineData, path: string, raw: unknown): v
     case 'councilTaxBaseConfig.parishPrecepts': baseline.councilTaxBaseConfig.parishPrecepts = toNumber(raw, baseline.councilTaxBaseConfig.parishPrecepts); break;
     case 'councilTaxBaseConfig.corePreceptPct': baseline.councilTaxBaseConfig.corePreceptPct = toNumber(raw, baseline.councilTaxBaseConfig.corePreceptPct); break;
     case 'councilTaxBaseConfig.ascPreceptPct': baseline.councilTaxBaseConfig.ascPreceptPct = toNumber(raw, baseline.councilTaxBaseConfig.ascPreceptPct); break;
+    case 'councilTaxBaseConfig.collectionFundSurplusDeficit': baseline.councilTaxBaseConfig.collectionFundSurplusDeficit = toNumber(raw, baseline.councilTaxBaseConfig.collectionFundSurplusDeficit); break;
+    case 'businessRatesConfig.enabled': baseline.businessRatesConfig.enabled = toBoolean(raw, baseline.businessRatesConfig.enabled); break;
+    case 'businessRatesConfig.baselineRates': baseline.businessRatesConfig.baselineRates = toNumber(raw, baseline.businessRatesConfig.baselineRates); break;
+    case 'businessRatesConfig.growthRate.y1': baseline.businessRatesConfig.growthRate.y1 = toNumber(raw, baseline.businessRatesConfig.growthRate.y1); break;
+    case 'businessRatesConfig.growthRate.y2': baseline.businessRatesConfig.growthRate.y2 = toNumber(raw, baseline.businessRatesConfig.growthRate.y2); break;
+    case 'businessRatesConfig.growthRate.y3': baseline.businessRatesConfig.growthRate.y3 = toNumber(raw, baseline.businessRatesConfig.growthRate.y3); break;
+    case 'businessRatesConfig.growthRate.y4': baseline.businessRatesConfig.growthRate.y4 = toNumber(raw, baseline.businessRatesConfig.growthRate.y4); break;
+    case 'businessRatesConfig.growthRate.y5': baseline.businessRatesConfig.growthRate.y5 = toNumber(raw, baseline.businessRatesConfig.growthRate.y5); break;
+    case 'businessRatesConfig.appealsProvision': baseline.businessRatesConfig.appealsProvision = toNumber(raw, baseline.businessRatesConfig.appealsProvision); break;
+    case 'businessRatesConfig.tariffTopUp': baseline.businessRatesConfig.tariffTopUp = toNumber(raw, baseline.businessRatesConfig.tariffTopUp); break;
+    case 'businessRatesConfig.levySafetyNet': baseline.businessRatesConfig.levySafetyNet = toNumber(raw, baseline.businessRatesConfig.levySafetyNet); break;
+    case 'businessRatesConfig.poolingGain': baseline.businessRatesConfig.poolingGain = toNumber(raw, baseline.businessRatesConfig.poolingGain); break;
+    case 'businessRatesConfig.collectionFundAdjustment': baseline.businessRatesConfig.collectionFundAdjustment = toNumber(raw, baseline.businessRatesConfig.collectionFundAdjustment); break;
+    case 'businessRatesConfig.resetAdjustment': baseline.businessRatesConfig.resetAdjustment = toNumber(raw, baseline.businessRatesConfig.resetAdjustment); break;
+    case 'businessRatesConfig.resetYear': baseline.businessRatesConfig.resetYear = Math.max(1, Math.min(5, Math.round(toNumber(raw, baseline.businessRatesConfig.resetYear)))) as 1 | 2 | 3 | 4 | 5; break;
     case 'ascCohortModel.enabled': baseline.ascCohortModel.enabled = toBoolean(raw, baseline.ascCohortModel.enabled); break;
     case 'ascCohortModel.population18to64': baseline.ascCohortModel.population18to64 = toNumber(raw, baseline.ascCohortModel.population18to64); break;
     case 'ascCohortModel.population65plus': baseline.ascCohortModel.population65plus = toNumber(raw, baseline.ascCohortModel.population65plus); break;
@@ -438,7 +517,33 @@ function applySettingPath(baseline: BaselineData, path: string, raw: unknown): v
     case 'mrpCalculator.assetLifeYears': baseline.mrpCalculator.assetLifeYears = Math.round(toNumber(raw, baseline.mrpCalculator.assetLifeYears)); break;
     case 'mrpCalculator.annuityRate': baseline.mrpCalculator.annuityRate = toNumber(raw, baseline.mrpCalculator.annuityRate); break;
     case 'paySpineConfig.enabled': baseline.paySpineConfig.enabled = toBoolean(raw, baseline.paySpineConfig.enabled); break;
+    case 'workforceModel.enabled': baseline.workforceModel.enabled = toBoolean(raw, baseline.workforceModel.enabled); break;
     case 'contractIndexationTracker.enabled': baseline.contractIndexationTracker.enabled = toBoolean(raw, baseline.contractIndexationTracker.enabled); break;
+    case 'contractIndexationTracker.indexAssumptions.cpi.y1': baseline.contractIndexationTracker.indexAssumptions.cpi.y1 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.cpi.y1); break;
+    case 'contractIndexationTracker.indexAssumptions.cpi.y2': baseline.contractIndexationTracker.indexAssumptions.cpi.y2 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.cpi.y2); break;
+    case 'contractIndexationTracker.indexAssumptions.cpi.y3': baseline.contractIndexationTracker.indexAssumptions.cpi.y3 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.cpi.y3); break;
+    case 'contractIndexationTracker.indexAssumptions.cpi.y4': baseline.contractIndexationTracker.indexAssumptions.cpi.y4 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.cpi.y4); break;
+    case 'contractIndexationTracker.indexAssumptions.cpi.y5': baseline.contractIndexationTracker.indexAssumptions.cpi.y5 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.cpi.y5); break;
+    case 'contractIndexationTracker.indexAssumptions.rpi.y1': baseline.contractIndexationTracker.indexAssumptions.rpi.y1 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.rpi.y1); break;
+    case 'contractIndexationTracker.indexAssumptions.rpi.y2': baseline.contractIndexationTracker.indexAssumptions.rpi.y2 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.rpi.y2); break;
+    case 'contractIndexationTracker.indexAssumptions.rpi.y3': baseline.contractIndexationTracker.indexAssumptions.rpi.y3 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.rpi.y3); break;
+    case 'contractIndexationTracker.indexAssumptions.rpi.y4': baseline.contractIndexationTracker.indexAssumptions.rpi.y4 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.rpi.y4); break;
+    case 'contractIndexationTracker.indexAssumptions.rpi.y5': baseline.contractIndexationTracker.indexAssumptions.rpi.y5 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.rpi.y5); break;
+    case 'contractIndexationTracker.indexAssumptions.nmw.y1': baseline.contractIndexationTracker.indexAssumptions.nmw.y1 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.nmw.y1); break;
+    case 'contractIndexationTracker.indexAssumptions.nmw.y2': baseline.contractIndexationTracker.indexAssumptions.nmw.y2 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.nmw.y2); break;
+    case 'contractIndexationTracker.indexAssumptions.nmw.y3': baseline.contractIndexationTracker.indexAssumptions.nmw.y3 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.nmw.y3); break;
+    case 'contractIndexationTracker.indexAssumptions.nmw.y4': baseline.contractIndexationTracker.indexAssumptions.nmw.y4 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.nmw.y4); break;
+    case 'contractIndexationTracker.indexAssumptions.nmw.y5': baseline.contractIndexationTracker.indexAssumptions.nmw.y5 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.nmw.y5); break;
+    case 'contractIndexationTracker.indexAssumptions.fixed.y1': baseline.contractIndexationTracker.indexAssumptions.fixed.y1 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.fixed.y1); break;
+    case 'contractIndexationTracker.indexAssumptions.fixed.y2': baseline.contractIndexationTracker.indexAssumptions.fixed.y2 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.fixed.y2); break;
+    case 'contractIndexationTracker.indexAssumptions.fixed.y3': baseline.contractIndexationTracker.indexAssumptions.fixed.y3 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.fixed.y3); break;
+    case 'contractIndexationTracker.indexAssumptions.fixed.y4': baseline.contractIndexationTracker.indexAssumptions.fixed.y4 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.fixed.y4); break;
+    case 'contractIndexationTracker.indexAssumptions.fixed.y5': baseline.contractIndexationTracker.indexAssumptions.fixed.y5 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.fixed.y5); break;
+    case 'contractIndexationTracker.indexAssumptions.bespoke.y1': baseline.contractIndexationTracker.indexAssumptions.bespoke.y1 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.bespoke.y1); break;
+    case 'contractIndexationTracker.indexAssumptions.bespoke.y2': baseline.contractIndexationTracker.indexAssumptions.bespoke.y2 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.bespoke.y2); break;
+    case 'contractIndexationTracker.indexAssumptions.bespoke.y3': baseline.contractIndexationTracker.indexAssumptions.bespoke.y3 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.bespoke.y3); break;
+    case 'contractIndexationTracker.indexAssumptions.bespoke.y4': baseline.contractIndexationTracker.indexAssumptions.bespoke.y4 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.bespoke.y4); break;
+    case 'contractIndexationTracker.indexAssumptions.bespoke.y5': baseline.contractIndexationTracker.indexAssumptions.bespoke.y5 = toNumber(raw, baseline.contractIndexationTracker.indexAssumptions.bespoke.y5); break;
     case 'investToSave.enabled': baseline.investToSave.enabled = toBoolean(raw, baseline.investToSave.enabled); break;
     case 'incomeGenerationWorkbook.enabled': baseline.incomeGenerationWorkbook.enabled = toBoolean(raw, baseline.incomeGenerationWorkbook.enabled); break;
     default: break;
@@ -449,7 +554,7 @@ export async function exportSnapshotToWorkbookBlob(snapshot: ModelSnapshot): Pro
   const xlsx = await import('xlsx');
   const workbook = xlsx.utils.book_new();
   const rows = buildEditableWorkbookRows(snapshot);
-  const sheetRows: Array<{ name: string; rows: (string | number)[][] }> = [
+  const sheetRows: Array<{ name: string; rows: SheetCell[][] }> = [
     { name: SHEET_META, rows: rows.metaRows },
     { name: SHEET_AUTHORITY, rows: rows.authorityRows },
     { name: SHEET_ASSUMPTIONS, rows: rows.assumptionsRows },
@@ -459,7 +564,7 @@ export async function exportSnapshotToWorkbookBlob(snapshot: ModelSnapshot): Pro
     { name: SHEET_RESERVES, rows: rows.namedReserveRows },
     { name: SHEET_CUSTOM_LINES, rows: rows.customLineRows },
     { name: SHEET_GRANTS, rows: rows.grantRows },
-    { name: SHEET_PAY_SPINE, rows: rows.paySpineRows },
+    { name: SHEET_WORKFORCE_POSTS, rows: rows.workforceRows },
     { name: SHEET_CONTRACTS, rows: rows.contractRows },
     { name: SHEET_INVEST, rows: rows.investRows },
     { name: SHEET_INCOME, rows: rows.incomeRows },
@@ -480,7 +585,7 @@ export async function exportSnapshotToWorkbookBlob(snapshot: ModelSnapshot): Pro
 }
 
 function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<XlsxModule['read']>): ModelSnapshot | null {
-  const assumptionsRows = getRows<{ section: string; field: string; value: unknown }>(xlsx, workbook, SHEET_ASSUMPTIONS);
+  const assumptionsRows = getRows<{ section: string; field: string; value?: unknown; y1?: unknown; y2?: unknown; y3?: unknown; y4?: unknown; y5?: unknown }>(xlsx, workbook, SHEET_ASSUMPTIONS);
   const coreRows = getRows<{ field: string; value: unknown }>(xlsx, workbook, SHEET_BASELINE_CORE);
   const hasEditableStructure = assumptionsRows.length > 0 || coreRows.length > 0;
   if (!hasEditableStructure) return null;
@@ -493,40 +598,49 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
   const customRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_CUSTOM_LINES);
   const grantRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_GRANTS);
   const payRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_PAY_SPINE);
+  const workforceRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_WORKFORCE_POSTS);
   const contractRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_CONTRACTS);
   const investRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_INVEST);
   const incomeRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_INCOME);
   const scenarioRows = getRows<Record<string, unknown>>(xlsx, workbook, SHEET_SCENARIOS);
 
   const assumptions: Assumptions = JSON.parse(JSON.stringify(DEFAULT_ASSUMPTIONS)) as Assumptions;
+  const rowProfile = (row: { value?: unknown; y1?: unknown; y2?: unknown; y3?: unknown; y4?: unknown; y5?: unknown }, fallback: YearProfile5 | number) => {
+    const hasProfileColumns = [row.y1, row.y2, row.y3, row.y4, row.y5].some((v) => v !== undefined && v !== null && String(v).trim() !== '');
+    return hasProfileColumns
+      ? coerceYearProfile({ y1: row.y1, y2: row.y2, y3: row.y3, y4: row.y4, y5: row.y5 }, fallback)
+      : coerceYearProfile(row.value, fallback);
+  };
+  const rowScalar = (row: { value?: unknown; y1?: unknown }, fallback: number) =>
+    toNumber(row.value ?? row.y1, fallback);
   for (const row of assumptionsRows) {
     const section = String(row.section || '').trim();
     const field = String(row.field || '').trim();
     if (!section || !field) continue;
     if (section === 'funding') {
-      if (field === 'councilTaxIncrease') assumptions.funding.councilTaxIncrease = toNumber(row.value, assumptions.funding.councilTaxIncrease);
-      if (field === 'businessRatesGrowth') assumptions.funding.businessRatesGrowth = toNumber(row.value, assumptions.funding.businessRatesGrowth);
-      if (field === 'grantVariation') assumptions.funding.grantVariation = toNumber(row.value, assumptions.funding.grantVariation);
-      if (field === 'feesChargesElasticity') assumptions.funding.feesChargesElasticity = toNumber(row.value, assumptions.funding.feesChargesElasticity);
+      if (field === 'councilTaxIncrease') assumptions.funding.councilTaxIncrease = rowProfile(row, assumptions.funding.councilTaxIncrease);
+      if (field === 'businessRatesGrowth') assumptions.funding.businessRatesGrowth = rowProfile(row, assumptions.funding.businessRatesGrowth);
+      if (field === 'grantVariation') assumptions.funding.grantVariation = rowProfile(row, assumptions.funding.grantVariation);
+      if (field === 'feesChargesElasticity') assumptions.funding.feesChargesElasticity = rowProfile(row, assumptions.funding.feesChargesElasticity);
     }
     if (section === 'expenditure') {
-      if (field === 'payAward') assumptions.expenditure.payAward = toNumber(row.value, assumptions.expenditure.payAward);
-      if (field === 'nonPayInflation') assumptions.expenditure.nonPayInflation = toNumber(row.value, assumptions.expenditure.nonPayInflation);
-      if (field === 'ascDemandGrowth') assumptions.expenditure.ascDemandGrowth = toNumber(row.value, assumptions.expenditure.ascDemandGrowth);
-      if (field === 'cscDemandGrowth') assumptions.expenditure.cscDemandGrowth = toNumber(row.value, assumptions.expenditure.cscDemandGrowth);
-      if (field === 'savingsDeliveryRisk') assumptions.expenditure.savingsDeliveryRisk = Math.max(0, Math.min(100, toNumber(row.value, assumptions.expenditure.savingsDeliveryRisk)));
-      if (field === 'payAwardByFundingSource.general_fund') assumptions.expenditure.payAwardByFundingSource.general_fund = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.general_fund);
-      if (field === 'payAwardByFundingSource.grant') assumptions.expenditure.payAwardByFundingSource.grant = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.grant);
-      if (field === 'payAwardByFundingSource.other') assumptions.expenditure.payAwardByFundingSource.other = toNumber(row.value, assumptions.expenditure.payAwardByFundingSource.other);
-      if (field === 'payGroupSensitivity.default') assumptions.expenditure.payGroupSensitivity.default = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.default);
-      if (field === 'payGroupSensitivity.teachers') assumptions.expenditure.payGroupSensitivity.teachers = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.teachers);
-      if (field === 'payGroupSensitivity.njc') assumptions.expenditure.payGroupSensitivity.njc = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.njc);
-      if (field === 'payGroupSensitivity.senior') assumptions.expenditure.payGroupSensitivity.senior = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.senior);
-      if (field === 'payGroupSensitivity.other') assumptions.expenditure.payGroupSensitivity.other = toNumber(row.value, assumptions.expenditure.payGroupSensitivity.other);
+      if (field === 'payAward') assumptions.expenditure.payAward = rowProfile(row, assumptions.expenditure.payAward);
+      if (field === 'nonPayInflation') assumptions.expenditure.nonPayInflation = rowProfile(row, assumptions.expenditure.nonPayInflation);
+      if (field === 'ascDemandGrowth') assumptions.expenditure.ascDemandGrowth = rowProfile(row, assumptions.expenditure.ascDemandGrowth);
+      if (field === 'cscDemandGrowth') assumptions.expenditure.cscDemandGrowth = rowProfile(row, assumptions.expenditure.cscDemandGrowth);
+      if (field === 'savingsDeliveryRisk') assumptions.expenditure.savingsDeliveryRisk = rowProfile(row, assumptions.expenditure.savingsDeliveryRisk);
+      if (field === 'payAwardByFundingSource.general_fund') assumptions.expenditure.payAwardByFundingSource.general_fund = rowScalar(row, assumptions.expenditure.payAwardByFundingSource.general_fund);
+      if (field === 'payAwardByFundingSource.grant') assumptions.expenditure.payAwardByFundingSource.grant = rowScalar(row, assumptions.expenditure.payAwardByFundingSource.grant);
+      if (field === 'payAwardByFundingSource.other') assumptions.expenditure.payAwardByFundingSource.other = rowScalar(row, assumptions.expenditure.payAwardByFundingSource.other);
+      if (field === 'payGroupSensitivity.default') assumptions.expenditure.payGroupSensitivity.default = rowScalar(row, assumptions.expenditure.payGroupSensitivity.default);
+      if (field === 'payGroupSensitivity.teachers') assumptions.expenditure.payGroupSensitivity.teachers = rowScalar(row, assumptions.expenditure.payGroupSensitivity.teachers);
+      if (field === 'payGroupSensitivity.njc') assumptions.expenditure.payGroupSensitivity.njc = rowScalar(row, assumptions.expenditure.payGroupSensitivity.njc);
+      if (field === 'payGroupSensitivity.senior') assumptions.expenditure.payGroupSensitivity.senior = rowScalar(row, assumptions.expenditure.payGroupSensitivity.senior);
+      if (field === 'payGroupSensitivity.other') assumptions.expenditure.payGroupSensitivity.other = rowScalar(row, assumptions.expenditure.payGroupSensitivity.other);
     }
     if (section === 'policy') {
-      if (field === 'annualSavingsTarget') assumptions.policy.annualSavingsTarget = toNumber(row.value, assumptions.policy.annualSavingsTarget);
-      if (field === 'reservesUsage') assumptions.policy.reservesUsage = toNumber(row.value, assumptions.policy.reservesUsage);
+      if (field === 'annualSavingsTarget') assumptions.policy.annualSavingsTarget = rowProfile(row, assumptions.policy.annualSavingsTarget);
+      if (field === 'reservesUsage') assumptions.policy.reservesUsage = rowProfile(row, assumptions.policy.reservesUsage);
       if (field === 'socialCareProtection') assumptions.policy.socialCareProtection = toBoolean(row.value, assumptions.policy.socialCareProtection);
     }
     if (section === 'advanced') {
@@ -574,16 +688,31 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
 
   baseline.namedReserves = reserveRows
     .filter((r) => toText(r.name).trim().length > 0)
-    .map((r, idx) => ({
-      id: toText(r.id, `reserve-${Date.now()}-${idx}`),
-      name: toText(r.name, `Reserve ${idx + 1}`),
-      purpose: toText(r.purpose, ''),
-      openingBalance: toNumber(r.openingBalance, 0),
-      plannedContributions: tuple5(r.contribY1, r.contribY2, r.contribY3, r.contribY4, r.contribY5),
-      plannedDrawdowns: tuple5(r.drawY1, r.drawY2, r.drawY3, r.drawY4, r.drawY5),
-      isEarmarked: toBoolean(r.isEarmarked, true),
-      minimumBalance: toNumber(r.minimumBalance, 0),
-    }));
+    .map((r, idx) => {
+      const isEarmarked = toBoolean(r.isEarmarked, true);
+      const rawCategory = toText(r.category, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const category =
+        rawCategory === 'generalfund' || rawCategory === 'gf'
+          ? 'general_fund'
+          : rawCategory === 'ringfenced' || rawCategory === 'restricted'
+            ? 'ringfenced'
+            : rawCategory === 'technical'
+              ? 'technical'
+              : rawCategory === 'servicespecific' || rawCategory === 'service'
+                ? 'service_specific'
+                : isEarmarked ? 'service_specific' : 'general_fund';
+      return {
+        id: toText(r.id, `reserve-${Date.now()}-${idx}`),
+        name: toText(r.name, `Reserve ${idx + 1}`),
+        purpose: toText(r.purpose, ''),
+        category,
+        openingBalance: toNumber(r.openingBalance, 0),
+        plannedContributions: tuple5(r.contribY1, r.contribY2, r.contribY3, r.contribY4, r.contribY5),
+        plannedDrawdowns: tuple5(r.drawY1, r.drawY2, r.drawY3, r.drawY4, r.drawY5),
+        isEarmarked: category !== 'general_fund',
+        minimumBalance: toNumber(r.minimumBalance, 0),
+      };
+    });
 
   baseline.grantSchedule = grantRows
     .filter((r) => toText(r.name).trim().length > 0)
@@ -593,9 +722,12 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
       value: toNumber(r.value, 0),
       certainty: toText(r.certainty, 'assumed') as BaselineData['grantSchedule'][number]['certainty'],
       endYear: Math.max(1, Math.min(5, Math.round(toNumber(r.endYear, 5)))) as 1 | 2 | 3 | 4 | 5,
+      ringfenced: toBoolean(r.ringfenced, false),
+      inflationLinked: toBoolean(r.inflationLinked, false),
+      replacementAssumption: toNumber(r.replacementAssumption, 0),
     }));
 
-  baseline.paySpineConfig.rows = payRows
+  const legacyPayRows = payRows
     .filter((r) => toText(r.grade).trim().length > 0)
     .map((r, idx) => ({
       id: toText(r.id, `pay-${Date.now()}-${idx}`),
@@ -603,20 +735,48 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
       fte: toNumber(r.fte, 0),
       spinePointCost: toNumber(r.spinePointCost, 0),
     }));
+  const workforcePosts = workforceRows
+    .filter((r) => toText(r.postId ?? r.postid).trim().length > 0 || toText(r.service).trim().length > 0)
+    .map((r, idx) => ({
+      id: toText(r.id, `wf-${Date.now()}-${idx}`),
+      postId: toText(r.postId ?? r.postid, `POST-${idx + 1}`),
+      service: toText(r.service, 'Imported Service'),
+      fundingSource: toText(r.fundingSource ?? r.fundingsource, 'general_fund') as BaselineData['workforceModel']['posts'][number]['fundingSource'],
+      fte: toNumber(r.fte, 0),
+      annualCost: toNumber(r.annualCost ?? r.annualcost, 0),
+      payAssumptionGroup: toText(r.payAssumptionGroup ?? r.payassumptiongroup, 'default') as BaselineData['workforceModel']['posts'][number]['payAssumptionGroup'],
+      vacancyFactor: toNumber(r.vacancyFactor ?? r.vacancyfactor, 0),
+      generalFundSplit: toNumber(r.generalFundSplit ?? r.generalfundsplit, 100),
+      grantFundSplit: toNumber(r.grantFundSplit ?? r.grantfundsplit, 0),
+      otherSplit: toNumber(r.otherSplit ?? r.othersplit, 0),
+    }));
+  baseline.paySpineConfig = { enabled: false, rows: [] };
+  baseline.workforceModel = {
+    ...baseline.workforceModel,
+    enabled: workforcePosts.length > 0 || legacyPayRows.length > 0,
+    mode: workforcePosts.length > 0 || legacyPayRows.length > 0 ? 'workforce_posts' : 'baseline',
+    posts: [...workforcePosts, ...migratePaySpineRowsToWorkforcePosts(legacyPayRows, workforcePosts)],
+  };
 
   baseline.contractIndexationTracker.contracts = contractRows
     .filter((r) => toText(r.name).trim().length > 0)
     .map((r, idx) => ({
       id: toText(r.id, `contract-${Date.now()}-${idx}`),
       name: toText(r.name, `Contract ${idx + 1}`),
+      supplier: toText(r.supplier, ''),
+      service: toText(r.service, ''),
+      fundingSource: toText(r.fundingSource, 'general_fund') as BaselineData['contractIndexationTracker']['contracts'][number]['fundingSource'],
       value: toNumber(r.value, 0),
       clause: toText(r.clause, 'bespoke') as BaselineData['contractIndexationTracker']['contracts'][number]['clause'],
       bespokeRate: toNumber(r.bespokeRate, 0),
       effectiveFromYear: Math.max(1, Math.min(5, Math.round(toNumber(r.effectiveFromYear, 1)))) as 1 | 2 | 3 | 4 | 5,
+      nextUpliftYear: Math.max(1, Math.min(5, Math.round(toNumber(r.nextUpliftYear, toNumber(r.effectiveFromYear, 1))))) as 1 | 2 | 3 | 4 | 5,
       reviewMonth: Math.max(1, Math.min(12, Math.round(toNumber(r.reviewMonth, 4)))),
       upliftMethod: toText(r.upliftMethod, 'cpi') as BaselineData['contractIndexationTracker']['contracts'][number]['upliftMethod'],
       fixedRate: toNumber(r.fixedRate, 0),
       customRate: toNumber(r.customRate, toNumber(r.bespokeRate, 0)),
+      capRate: toNumber(r.capRate, 0),
+      collarRate: toNumber(r.collarRate, 0),
       phaseInMonths: Math.max(0, Math.min(12, Math.round(toNumber(r.phaseInMonths, 0)))),
     }));
 
@@ -679,17 +839,17 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
     .map((r, idx) => {
       const scenarioAssumptions: Assumptions = {
         funding: {
-          councilTaxIncrease: toNumber(r.councilTaxIncrease, assumptions.funding.councilTaxIncrease),
-          businessRatesGrowth: toNumber(r.businessRatesGrowth, assumptions.funding.businessRatesGrowth),
-          grantVariation: toNumber(r.grantVariation, assumptions.funding.grantVariation),
-          feesChargesElasticity: toNumber(r.feesChargesElasticity, assumptions.funding.feesChargesElasticity),
+          councilTaxIncrease: coerceYearProfile(r.councilTaxIncrease, assumptions.funding.councilTaxIncrease),
+          businessRatesGrowth: coerceYearProfile(r.businessRatesGrowth, assumptions.funding.businessRatesGrowth),
+          grantVariation: coerceYearProfile(r.grantVariation, assumptions.funding.grantVariation),
+          feesChargesElasticity: coerceYearProfile(r.feesChargesElasticity, assumptions.funding.feesChargesElasticity),
         },
         expenditure: {
-          payAward: toNumber(r.payAward, assumptions.expenditure.payAward),
-          nonPayInflation: toNumber(r.nonPayInflation, assumptions.expenditure.nonPayInflation),
-          ascDemandGrowth: toNumber(r.ascDemandGrowth, assumptions.expenditure.ascDemandGrowth),
-          cscDemandGrowth: toNumber(r.cscDemandGrowth, assumptions.expenditure.cscDemandGrowth),
-          savingsDeliveryRisk: Math.max(0, Math.min(100, toNumber(r.savingsDeliveryRisk, assumptions.expenditure.savingsDeliveryRisk))),
+          payAward: coerceYearProfile(r.payAward, assumptions.expenditure.payAward),
+          nonPayInflation: coerceYearProfile(r.nonPayInflation, assumptions.expenditure.nonPayInflation),
+          ascDemandGrowth: coerceYearProfile(r.ascDemandGrowth, assumptions.expenditure.ascDemandGrowth),
+          cscDemandGrowth: coerceYearProfile(r.cscDemandGrowth, assumptions.expenditure.cscDemandGrowth),
+          savingsDeliveryRisk: coerceYearProfile(r.savingsDeliveryRisk, assumptions.expenditure.savingsDeliveryRisk),
           payAwardByFundingSource: {
             general_fund: toNumber(r.payAwardByFundingSourceGeneralFund, assumptions.expenditure.payAwardByFundingSource.general_fund),
             grant: toNumber(r.payAwardByFundingSourceGrant, assumptions.expenditure.payAwardByFundingSource.grant),
@@ -704,8 +864,8 @@ function parseEditableWorkbookToSnapshot(xlsx: XlsxModule, workbook: ReturnType<
           },
         },
         policy: {
-          annualSavingsTarget: toNumber(r.annualSavingsTarget, assumptions.policy.annualSavingsTarget),
-          reservesUsage: toNumber(r.reservesUsage, assumptions.policy.reservesUsage),
+          annualSavingsTarget: coerceYearProfile(r.annualSavingsTarget, assumptions.policy.annualSavingsTarget),
+          reservesUsage: coerceYearProfile(r.reservesUsage, assumptions.policy.reservesUsage),
           socialCareProtection: toBoolean(r.socialCareProtection, assumptions.policy.socialCareProtection),
         },
         advanced: {

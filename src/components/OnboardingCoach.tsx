@@ -17,7 +17,7 @@ const STEPS: CoachStep[] = [
   },
   {
     title: 'Navigation Tabs',
-    description: 'Switch across Overview, Baseline, Gap, Reserves, Scenarios, and Governance to review the full financial story.',
+    description: 'Switch across Summary, Baseline, Savings, Reserves, Scenarios, and Governance to review the full financial story.',
     selector: '#header-tabs',
   },
   {

@@ -267,10 +267,11 @@ function CustomLineRow({ line }: { line: CustomServiceLine }) {
 
 // ── CSV Import panel ───────────────────────────────────────────────────────────
 function CsvImportPanel() {
-  const { baseline, importBaselinePartial } = useMTFSStore();
+  const { baseline, importBaselinePartial, lastImportSnapshot, undoLastImport } = useMTFSStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | 'idle'; message: string }>({ type: 'idle', message: '' });
   const [isBuildingTemplate, setIsBuildingTemplate] = useState(false);
+  const [preview, setPreview] = useState<{ fileName: string; partial: Partial<typeof baseline>; warnings: string[] } | null>(null);
 
   const analyzeBaselineImport = (partial: Partial<typeof baseline>) => {
     const warnings: string[] = [];
@@ -413,12 +414,8 @@ function CsvImportPanel() {
       const result = await parseBaselineSpreadsheet(file);
       if (result.success && result.baseline) {
         const warnings = analyzeBaselineImport(result.baseline);
-        importBaselinePartial(result.baseline);
-        const warningText = warnings.length > 0 ? ` Warnings: ${warnings.slice(0, 3).join(' | ')}${warnings.length > 3 ? ` | +${warnings.length - 3} more` : ''}` : '';
-        setStatus({
-          type: 'success',
-          message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}.${warningText}`,
-        });
+        setPreview({ fileName: file.name, partial: result.baseline, warnings });
+        setStatus({ type: 'idle', message: '' });
       } else {
         setStatus({ type: 'error', message: result.errors.join('; ') });
       }
@@ -432,12 +429,8 @@ function CsvImportPanel() {
       const result = parseBaselineCsv(text);
       if (result.success && result.baseline) {
         const warnings = analyzeBaselineImport(result.baseline);
-        importBaselinePartial(result.baseline);
-        const warningText = warnings.length > 0 ? ` Warnings: ${warnings.slice(0, 3).join(' | ')}${warnings.length > 3 ? ` | +${warnings.length - 3} more` : ''}` : '';
-        setStatus({
-          type: 'success',
-          message: `Imported ${Object.keys(result.baseline).length} fields from ${file.name}.${warningText}`,
-        });
+        setPreview({ fileName: file.name, partial: result.baseline, warnings });
+        setStatus({ type: 'idle', message: '' });
       } else {
         setStatus({ type: 'error', message: result.errors.join('; ') });
       }
@@ -480,6 +473,57 @@ function CsvImportPanel() {
         <p className="text-[9px] text-[#4a6080]">.csv, .xlsx, .xls</p>
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} className="hidden" title="Select a baseline import file." />
       </div>
+
+      {preview && (
+        <div className="rounded-xl border border-[rgba(59,130,246,0.24)] bg-[rgba(59,130,246,0.06)] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold text-[#f0f4ff]">Import preview: {preview.fileName}</p>
+              <p className="mt-1 text-[10px] text-[#8ca0c0]">{Object.keys(preview.partial).length} mapped field(s). Confirm to mutate the model.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  importBaselinePartial(preview.partial, `Baseline imported from ${preview.fileName}`);
+                  setStatus({ type: 'success', message: `Imported ${Object.keys(preview.partial).length} fields from ${preview.fileName}.` });
+                  setPreview(null);
+                }}
+                className="rounded-lg border border-[rgba(16,185,129,0.35)] bg-[rgba(16,185,129,0.12)] px-3 py-1.5 text-[10px] font-semibold text-[#10b981]"
+              >
+                Confirm import
+              </button>
+              <button onClick={() => setPreview(null)} className="rounded-lg border border-[rgba(99,179,237,0.18)] px-3 py-1.5 text-[10px] font-semibold text-[#8ca0c0]">
+                Cancel
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {Object.entries(preview.partial).filter(([, value]) => typeof value === 'number').slice(0, 8).map(([key, value]) => (
+              <div key={key} className="rounded border border-[rgba(99,179,237,0.12)] bg-[#080c14] p-2">
+                <p className="text-[9px] uppercase tracking-widest text-[#4a6080]">{key}</p>
+                <p className="mono mt-1 text-[11px] text-[#dbeafe]">£{Number(value).toLocaleString('en-GB')}k</p>
+              </div>
+            ))}
+          </div>
+          {preview.warnings.length > 0 && (
+            <div className="mt-3 rounded-lg border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.08)] p-2">
+              <p className="text-[10px] font-semibold text-[#f59e0b]">Warnings</p>
+              <ul className="mt-1 space-y-1 text-[10px] text-[#f8c471]">
+                {preview.warnings.slice(0, 5).map((warning) => <li key={warning}>{warning}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {lastImportSnapshot && (
+        <button
+          onClick={undoLastImport}
+          className="rounded-lg border border-[rgba(245,158,11,0.28)] bg-[rgba(245,158,11,0.08)] px-3 py-2 text-[10px] font-semibold text-[#f59e0b]"
+        >
+          Undo last import from {new Date(lastImportSnapshot.timestamp).toLocaleString('en-GB')}
+        </button>
+      )}
 
       {status.type !== 'idle' && (
         <div
@@ -540,7 +584,7 @@ export function BaselineEditor() {
   return (
     <div className="space-y-4">
       {/* Info banner */}
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-[rgba(59,130,246,0.06)] border border-[rgba(59,130,246,0.15)]">
+      <div id="baseline-core" className="flex items-start gap-3 p-4 rounded-xl bg-[rgba(59,130,246,0.06)] border border-[rgba(59,130,246,0.15)] scroll-mt-32">
         <Database size={16} className="text-[#3b82f6] mt-0.5 shrink-0" />
         <div>
           <p className="text-[12px] font-semibold text-[#f0f4ff]">Baseline Configuration</p>
@@ -588,14 +632,18 @@ export function BaselineEditor() {
             <BaselineRow label="Fees & Charges" fieldKey="feesAndCharges" tooltip="Income from fees, charges, and traded services. Does not include funding grants or council tax." />
           </EditorSection>
 
+          <div id="pay-modelling" className="scroll-mt-32">
           <EditorSection title="Pay Expenditure" accent="#3b82f6" tooltip="Workforce pay base before annual pay awards are applied.">
             <BaselineRow label="Pay" fieldKey="pay" tooltip="Total pay expenditure including all NJC and locally negotiated pay. This is the largest expenditure driver and is separately modelled." />
           </EditorSection>
+          </div>
 
+          <div id="contract-inflation" className="scroll-mt-32">
           <EditorSection title="Non-Pay Expenditure" accent="#f59e0b" tooltip="Non-pay cost base for inflation and contract pressure modelling.">
             <BaselineRow label="Non-Pay" fieldKey="nonPay" tooltip="Non-pay running costs: energy, supplies, services, IT, transport. Modelled with the non-pay inflation driver." />
             <BaselineRow label="Other Service Expenditure" fieldKey="otherServiceExp" tooltip="Residual service expenditure not captured in pay, non-pay, or demand-led categories." />
           </EditorSection>
+          </div>
 
           <EditorSection title="Demand-Led Services" accent="#f97316" tooltip="Demand-sensitive services where cost growth can outpace inflation.">
             <BaselineRow label="Adult Social Care" fieldKey="ascDemandLed" tooltip="Gross ASC expenditure in the base year. This is demand-led and grows using the ASC demand growth driver." />

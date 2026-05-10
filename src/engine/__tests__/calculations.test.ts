@@ -4,6 +4,7 @@ import {
   parseBaselineCsv,
   runCalculations,
 } from '../calculations';
+import { addToProfile, makeYearProfile } from '../../utils/yearProfile';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -24,10 +25,32 @@ describe('calculation engine', () => {
     expect(result.overallRiskScore).toBeLessThanOrEqual(100);
   });
 
+  it('normalises legacy partial baselines before calculation', () => {
+    const legacyBaseline = {
+      councilTax: 168_000,
+      businessRates: 92_000,
+      coreGrants: 102_000,
+      feesAndCharges: 52_000,
+      pay: 195_000,
+      nonPay: 88_000,
+      ascDemandLed: 63_000,
+      cscDemandLed: 24_000,
+      otherServiceExp: 16_000,
+      generalFundReserves: 14_200,
+      earmarkedReserves: 8_800,
+      reservesMinimumThreshold: 8_000,
+    };
+
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), legacyBaseline as typeof DEFAULT_BASELINE, []);
+
+    expect(result.years).toHaveLength(5);
+    expect(Number.isFinite(result.totalGap)).toBe(true);
+  });
+
   it('higher pay award worsens the five-year gap vs baseline assumptions', () => {
     const baseAssumptions = clone(DEFAULT_ASSUMPTIONS);
     const stressedAssumptions = clone(DEFAULT_ASSUMPTIONS);
-    stressedAssumptions.expenditure.payAward += 2;
+    stressedAssumptions.expenditure.payAward = addToProfile(stressedAssumptions.expenditure.payAward, 2);
 
     const base = runCalculations(baseAssumptions, clone(DEFAULT_BASELINE), []);
     const stressed = runCalculations(stressedAssumptions, clone(DEFAULT_BASELINE), []);
@@ -37,7 +60,7 @@ describe('calculation engine', () => {
 
   it('planned reserves usage applies explicit annual drawdown up to the gap', () => {
     const assumptions = clone(DEFAULT_ASSUMPTIONS);
-    assumptions.policy.reservesUsage = 500;
+    assumptions.policy.reservesUsage = makeYearProfile(500);
 
     const baseline = clone(DEFAULT_BASELINE);
     baseline.councilTax = 0;
@@ -53,7 +76,7 @@ describe('calculation engine', () => {
 
   it('zero planned reserves usage means no reserves drawdown', () => {
     const assumptions = clone(DEFAULT_ASSUMPTIONS);
-    assumptions.policy.reservesUsage = 0;
+    assumptions.policy.reservesUsage = makeYearProfile(0);
 
     const baseline = clone(DEFAULT_BASELINE);
     baseline.councilTax = 0;
@@ -74,7 +97,7 @@ describe('calculation engine', () => {
 
     const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), pressureBaseline, []);
     const stressedAssumptions = clone(DEFAULT_ASSUMPTIONS);
-    stressedAssumptions.expenditure.payAward += 3;
+    stressedAssumptions.expenditure.payAward = addToProfile(stressedAssumptions.expenditure.payAward, 3);
     const stressed = runCalculations(stressedAssumptions, pressureBaseline, []);
 
     expect(stressed.councilTaxEquivalent).toBeGreaterThan(base.councilTaxEquivalent);
@@ -89,7 +112,7 @@ describe('calculation engine', () => {
 
     const base = runCalculations(clone(DEFAULT_ASSUMPTIONS), pressureBaseline, []);
     const ctBoostAssumptions = clone(DEFAULT_ASSUMPTIONS);
-    ctBoostAssumptions.funding.councilTaxIncrease += 2;
+    ctBoostAssumptions.funding.councilTaxIncrease = addToProfile(ctBoostAssumptions.funding.councilTaxIncrease, 2);
     const boosted = runCalculations(ctBoostAssumptions, pressureBaseline, []);
 
     expect(boosted.councilTaxEquivalent).toBeLessThan(base.councilTaxEquivalent);
@@ -234,6 +257,261 @@ describe('calculation engine', () => {
     const stressedResult = runCalculations(stressed, baseline, []);
     expect(stressedResult.years[0].generalFundPayPressure).toBeGreaterThan(baseResult.years[0].generalFundPayPressure);
     expect(stressedResult.years[0].payInflationImpact).toBeGreaterThan(baseResult.years[0].payInflationImpact);
+  });
+
+  it('migrates legacy pay spine rows into workforce posts for active pay calculations', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.pay = 500;
+    baseline.paySpineConfig.enabled = true;
+    baseline.paySpineConfig.rows = [{ id: 'ps-1', grade: 'G7', fte: 10, spinePointCost: 50_000 }];
+
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.expenditure.payAwardByFundingSource.general_fund = 4;
+    const result = runCalculations(assumptions, baseline, []);
+    const y1 = result.years[0];
+
+    expect(y1.payBase).toBeCloseTo(500, 6);
+    expect(y1.generalFundPayPressure).toBeCloseTo(20, 6);
+    expect(y1.payBudgetReconciliation.importedPayBudget).toBeCloseTo(500, 6);
+    expect(y1.payBudgetReconciliation.activeModelMode).toBe('workforce_posts');
+  });
+
+  it('falls back to baseline pay when workforce mode has no imported rows', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.pay = 1_000;
+    baseline.workforceModel.enabled = true;
+    baseline.workforceModel.mode = 'workforce_posts';
+    baseline.workforceModel.posts = [];
+
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.expenditure.payAward = makeYearProfile(5);
+    const result = runCalculations(assumptions, baseline, []);
+
+    expect(result.years[0].payBase).toBeCloseTo(1_000, 6);
+    expect(result.years[0].generalFundPayPressure).toBeCloseTo(50, 6);
+    expect(result.years[0].payBudgetReconciliation.activeModelMode).toBe('baseline');
+  });
+
+  it('combines migrated legacy pay rows and workforce posts in workforce-only reconciliation', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.pay = 1_000;
+    baseline.paySpineConfig.enabled = true;
+    baseline.paySpineConfig.rows = [{ id: 'ps-1', grade: 'G7', fte: 10, spinePointCost: 50_000 }];
+    baseline.workforceModel.enabled = true;
+    baseline.workforceModel.mode = 'workforce_posts';
+    baseline.workforceModel.posts = [{
+      id: 'wf-1',
+      postId: 'POST-1',
+      service: 'Adults',
+      fundingSource: 'grant',
+      fte: 1,
+      annualCost: 500_000,
+      payAssumptionGroup: 'teachers',
+    }];
+
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.expenditure.payAwardByFundingSource.general_fund = 4;
+    assumptions.expenditure.payAwardByFundingSource.grant = 2;
+    assumptions.expenditure.payGroupSensitivity.teachers = 1;
+    const result = runCalculations(assumptions, baseline, []);
+    const y1 = result.years[0];
+
+    expect(y1.payBase).toBeCloseTo(1_000, 6);
+    expect(y1.generalFundPayPressure).toBeCloseTo(20, 6);
+    expect(y1.grantFundedPayPressure).toBeCloseTo(15, 6);
+    expect(y1.payBudgetReconciliation.importedPayBudget).toBeCloseTo(1_000, 6);
+    expect(y1.payBudgetReconciliation.activeModelMode).toBe('workforce_posts');
+  });
+
+  it('separates general fund and grant-funded pay pressure from imported post splits', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.pay = 900;
+    baseline.workforceModel.enabled = true;
+    baseline.workforceModel.mode = 'workforce_posts';
+    baseline.workforceModel.posts = [
+      {
+        id: 'wf-split',
+        postId: 'ASC-1',
+        service: 'Adults',
+        fundingSource: 'general_fund',
+        fte: 1,
+        annualCost: 1_000_000,
+        vacancyFactor: 10,
+        generalFundSplit: 60,
+        grantFundSplit: 40,
+        otherSplit: 0,
+        payAssumptionGroup: 'default',
+      },
+    ];
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.expenditure.payAwardByFundingSource.general_fund = 5;
+    assumptions.expenditure.payAwardByFundingSource.grant = 2;
+    assumptions.expenditure.payAwardByFundingSource.other = 0;
+
+    const result = runCalculations(assumptions, baseline, []);
+    const y1 = result.years[0];
+
+    expect(y1.payBudgetReconciliation.importedPayBudget).toBeCloseTo(900, 6);
+    expect(y1.payBudgetReconciliation.baselinePay).toBe(900);
+    expect(y1.payBudgetReconciliation.generalFundBase).toBeCloseTo(540, 6);
+    expect(y1.payBudgetReconciliation.grantFundedBase).toBeCloseTo(360, 6);
+    expect(y1.generalFundPayPressure).toBeCloseTo(27, 6);
+    expect(y1.grantFundedPayPressure).toBeCloseTo(7.2, 6);
+  });
+
+  it('tracks reserve categories and restricts policy drawdown to general fund named reserves', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.namedReserves = [
+      {
+        id: 'gf',
+        name: 'General Fund Reserve',
+        purpose: 'Usable risk buffer',
+        category: 'general_fund',
+        openingBalance: 500,
+        plannedContributions: [0, 0, 0, 0, 0],
+        plannedDrawdowns: [0, 0, 0, 0, 0],
+        isEarmarked: false,
+        minimumBalance: 0,
+      },
+      {
+        id: 'svc',
+        name: 'Service Reserve',
+        purpose: 'Service specific cover',
+        category: 'service_specific',
+        openingBalance: 1_000,
+        plannedContributions: [0, 0, 0, 0, 0],
+        plannedDrawdowns: [0, 0, 0, 0, 0],
+        isEarmarked: true,
+        minimumBalance: 0,
+      },
+      {
+        id: 'ring',
+        name: 'Ringfenced Reserve',
+        purpose: 'Restricted grant',
+        category: 'ringfenced',
+        openingBalance: 1_000,
+        plannedContributions: [0, 0, 0, 0, 0],
+        plannedDrawdowns: [0, 0, 0, 0, 0],
+        isEarmarked: true,
+        minimumBalance: 0,
+      },
+      {
+        id: 'tech',
+        name: 'Technical Reserve',
+        purpose: 'Technical accounting',
+        category: 'technical',
+        openingBalance: 1_000,
+        plannedContributions: [0, 0, 0, 0, 0],
+        plannedDrawdowns: [0, 0, 0, 0, 0],
+        isEarmarked: true,
+        minimumBalance: 0,
+      },
+    ];
+    baseline.councilTax = 0;
+    baseline.businessRates = 0;
+    baseline.coreGrants = 0;
+    baseline.feesAndCharges = 0;
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.policy.reservesUsage = makeYearProfile(2_000);
+
+    const result = runCalculations(assumptions, baseline, []);
+    const y1 = result.years[0];
+
+    expect(y1.reserveCategoryClosingBalances.general_fund).toBeCloseTo(0, 6);
+    expect(y1.reserveCategoryClosingBalances.service_specific).toBeCloseTo(1_000, 6);
+    expect(y1.reserveCategoryClosingBalances.ringfenced).toBeCloseTo(1_000, 6);
+    expect(y1.reserveCategoryClosingBalances.technical).toBeCloseTo(1_000, 6);
+    expect(y1.totalClosingReserves).toBeCloseTo(3_000, 6);
+  });
+
+  it('defaults legacy earmarked reserves to service specific category', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.namedReserves = [{
+      id: 'legacy',
+      name: 'Legacy Earmarked',
+      purpose: 'Legacy data',
+      openingBalance: 750,
+      plannedContributions: [0, 0, 0, 0, 0],
+      plannedDrawdowns: [0, 0, 0, 0, 0],
+      isEarmarked: true,
+      minimumBalance: 0,
+    }];
+
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), baseline, []);
+
+    expect(result.years[0].namedReserveResults[0].category).toBe('service_specific');
+    expect(result.years[0].reserveCategoryClosingBalances.service_specific).toBeCloseTo(750, 6);
+  });
+
+  it('applies contract index assumptions with caps, collars and next uplift year', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.contractIndexationTracker.enabled = true;
+    baseline.contractIndexationTracker.indexAssumptions.cpi = makeYearProfile(10);
+    baseline.contractIndexationTracker.contracts = [
+      {
+        id: 'ct-cap',
+        name: 'Waste contract',
+        supplier: 'Supplier A',
+        service: 'Waste',
+        fundingSource: 'general_fund',
+        value: 1000,
+        clause: 'cpi',
+        bespokeRate: 0,
+        effectiveFromYear: 1,
+        nextUpliftYear: 2,
+        reviewMonth: 1,
+        upliftMethod: 'cpi',
+        fixedRate: 0,
+        customRate: 0,
+        capRate: 4,
+        collarRate: 2,
+        phaseInMonths: 0,
+      },
+    ];
+
+    const result = runCalculations(clone(DEFAULT_ASSUMPTIONS), baseline, []);
+    expect(result.years[0].contractIndexationCost).toBe(0);
+    expect(result.years[1].contractIndexationCost).toBeCloseTo(40, 6);
+    expect(result.years[1].contractIndexationBreakdown[0].appliedRate).toBe(4);
+  });
+
+  it('models central funding sub-models and grant replacement assumptions', () => {
+    const baseline = clone(DEFAULT_BASELINE);
+    baseline.councilTaxBaseConfig.enabled = true;
+    baseline.councilTaxBaseConfig.bandDEquivalentDwellings = 10_000;
+    baseline.councilTaxBaseConfig.collectionRate = 98;
+    baseline.councilTaxBaseConfig.bandDCharge = 2_000;
+    baseline.councilTaxBaseConfig.corePreceptPct = 0;
+    baseline.councilTaxBaseConfig.ascPreceptPct = 0;
+    baseline.councilTaxBaseConfig.collectionFundSurplusDeficit = -250;
+    baseline.businessRatesConfig.enabled = true;
+    baseline.businessRatesConfig.baselineRates = 5_000;
+    baseline.businessRatesConfig.growthRate = makeYearProfile(2);
+    baseline.businessRatesConfig.appealsProvision = 100;
+    baseline.businessRatesConfig.tariffTopUp = 300;
+    baseline.businessRatesConfig.levySafetyNet = -50;
+    baseline.businessRatesConfig.poolingGain = 40;
+    baseline.businessRatesConfig.collectionFundAdjustment = -20;
+    baseline.businessRatesConfig.resetAdjustment = -500;
+    baseline.businessRatesConfig.resetYear = 2;
+    baseline.grantSchedule = [{
+      id: 'grant-1',
+      name: 'Legacy grant',
+      value: 1000,
+      certainty: 'confirmed',
+      endYear: 1,
+      ringfenced: false,
+      inflationLinked: false,
+      replacementAssumption: 50,
+    }];
+
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.funding.councilTaxIncrease = makeYearProfile(0);
+    const result = runCalculations(assumptions, baseline, []);
+
+    expect(result.years[0].councilTax).toBeCloseTo(19_350, 6);
+    expect(result.years[1].businessRates).toBeLessThan(result.years[0].businessRates);
+    expect(result.years[1].coreGrants).toBeGreaterThanOrEqual(500);
   });
 });
 
@@ -394,19 +672,19 @@ describe('assumption engine control connectivity', () => {
     const base = runCalculations(baseA, clone(DEFAULT_BASELINE), []);
 
     const ctUp = clone(baseA);
-    ctUp.funding.councilTaxIncrease += 1;
+    ctUp.funding.councilTaxIncrease = addToProfile(ctUp.funding.councilTaxIncrease, 1);
     expect(runCalculations(ctUp, clone(DEFAULT_BASELINE), []).years[4].councilTax).toBeGreaterThan(base.years[4].councilTax);
 
     const brUp = clone(baseA);
-    brUp.funding.businessRatesGrowth += 1;
+    brUp.funding.businessRatesGrowth = addToProfile(brUp.funding.businessRatesGrowth, 1);
     expect(runCalculations(brUp, clone(DEFAULT_BASELINE), []).years[4].businessRates).toBeGreaterThan(base.years[4].businessRates);
 
     const grantUp = clone(baseA);
-    grantUp.funding.grantVariation += 1;
+    grantUp.funding.grantVariation = addToProfile(grantUp.funding.grantVariation, 1);
     expect(runCalculations(grantUp, clone(DEFAULT_BASELINE), []).years[4].coreGrants).toBeGreaterThan(base.years[4].coreGrants);
 
     const feesUp = clone(baseA);
-    feesUp.funding.feesChargesElasticity += 1;
+    feesUp.funding.feesChargesElasticity = addToProfile(feesUp.funding.feesChargesElasticity, 1);
     expect(runCalculations(feesUp, clone(DEFAULT_BASELINE), []).years[4].feesAndCharges).toBeGreaterThan(base.years[4].feesAndCharges);
   });
 
@@ -415,19 +693,19 @@ describe('assumption engine control connectivity', () => {
     const base = runCalculations(baseA, clone(DEFAULT_BASELINE), []);
 
     const payUp = clone(baseA);
-    payUp.expenditure.payAward += 1;
+    payUp.expenditure.payAward = addToProfile(payUp.expenditure.payAward, 1);
     expect(runCalculations(payUp, clone(DEFAULT_BASELINE), []).years[4].totalExpenditure).toBeGreaterThan(base.years[4].totalExpenditure);
 
     const nonPayUp = clone(baseA);
-    nonPayUp.expenditure.nonPayInflation += 1;
+    nonPayUp.expenditure.nonPayInflation = addToProfile(nonPayUp.expenditure.nonPayInflation, 1);
     expect(runCalculations(nonPayUp, clone(DEFAULT_BASELINE), []).years[4].totalExpenditure).toBeGreaterThan(base.years[4].totalExpenditure);
 
     const ascUp = clone(baseA);
-    ascUp.expenditure.ascDemandGrowth += 1;
+    ascUp.expenditure.ascDemandGrowth = addToProfile(ascUp.expenditure.ascDemandGrowth, 1);
     expect(runCalculations(ascUp, clone(DEFAULT_BASELINE), []).years[4].ascPressure).toBeGreaterThan(base.years[4].ascPressure);
 
     const cscUp = clone(baseA);
-    cscUp.expenditure.cscDemandGrowth += 1;
+    cscUp.expenditure.cscDemandGrowth = addToProfile(cscUp.expenditure.cscDemandGrowth, 1);
     expect(runCalculations(cscUp, clone(DEFAULT_BASELINE), []).years[4].cscPressure).toBeGreaterThan(base.years[4].cscPressure);
 
     // Savings delivery risk only impacts outputs when a savings target/proposals exist.
@@ -437,11 +715,11 @@ describe('assumption engine control connectivity', () => {
     pressureBaseline.coreGrants = 0;
     pressureBaseline.feesAndCharges = 0;
     const withTarget = clone(baseA);
-    withTarget.policy.annualSavingsTarget = 5_000;
+    withTarget.policy.annualSavingsTarget = makeYearProfile(5_000);
     const goodDelivery = clone(withTarget);
-    goodDelivery.expenditure.savingsDeliveryRisk = 95;
+    goodDelivery.expenditure.savingsDeliveryRisk = makeYearProfile(95);
     const weakDelivery = clone(withTarget);
-    weakDelivery.expenditure.savingsDeliveryRisk = 60;
+    weakDelivery.expenditure.savingsDeliveryRisk = makeYearProfile(60);
     expect(runCalculations(weakDelivery, pressureBaseline, []).totalGap).toBeGreaterThan(runCalculations(goodDelivery, pressureBaseline, []).totalGap);
   });
 
@@ -454,23 +732,23 @@ describe('assumption engine control connectivity', () => {
     pressureBaseline.feesAndCharges = 0;
 
     const noSavings = clone(baseA);
-    noSavings.policy.annualSavingsTarget = 0;
+    noSavings.policy.annualSavingsTarget = makeYearProfile(0);
     const withSavings = clone(baseA);
-    withSavings.policy.annualSavingsTarget = 2_000;
+    withSavings.policy.annualSavingsTarget = makeYearProfile(2_000);
     expect(runCalculations(withSavings, pressureBaseline, []).totalGap).toBeLessThan(runCalculations(noSavings, pressureBaseline, []).totalGap);
 
     const noReservesUse = clone(baseA);
-    noReservesUse.policy.reservesUsage = 0;
+    noReservesUse.policy.reservesUsage = makeYearProfile(0);
     const withReservesUse = clone(baseA);
-    withReservesUse.policy.reservesUsage = 1_000;
+    withReservesUse.policy.reservesUsage = makeYearProfile(1_000);
     expect(runCalculations(withReservesUse, pressureBaseline, []).years.some((y) => y.reservesDrawdown > 0)).toBe(true);
     expect(runCalculations(noReservesUse, pressureBaseline, []).years.every((y) => y.reservesDrawdown === 0)).toBe(true);
 
     const protectionOn = clone(baseA);
-    protectionOn.policy.annualSavingsTarget = 2_000;
+    protectionOn.policy.annualSavingsTarget = makeYearProfile(2_000);
     protectionOn.policy.socialCareProtection = true;
     const protectionOff = clone(baseA);
-    protectionOff.policy.annualSavingsTarget = 2_000;
+    protectionOff.policy.annualSavingsTarget = makeYearProfile(2_000);
     protectionOff.policy.socialCareProtection = false;
     expect(runCalculations(protectionOn, pressureBaseline, []).totalGap).toBeGreaterThan(runCalculations(protectionOff, pressureBaseline, []).totalGap);
   });
@@ -492,5 +770,28 @@ describe('assumption engine control connectivity', () => {
     rtHighDeflator.advanced.inflationRate = 4;
     expect(runCalculations(rtHighDeflator, clone(DEFAULT_BASELINE), []).years[4].totalFunding)
       .toBeLessThan(runCalculations(rtLowDeflator, clone(DEFAULT_BASELINE), []).years[4].totalFunding);
+  });
+
+  it('reconciles annual funding, expenditure, savings, reserves, raw gap and net gap', () => {
+    const assumptions = clone(DEFAULT_ASSUMPTIONS);
+    assumptions.policy.annualSavingsTarget = makeYearProfile(1_500);
+    assumptions.policy.reservesUsage = makeYearProfile(750);
+    const baseline = clone(DEFAULT_BASELINE);
+    const result = runCalculations(assumptions, baseline, []);
+
+    for (const year of result.years) {
+      expect(year.rawGap).toBeCloseTo(year.totalExpenditure - year.totalFunding, 6);
+      expect(year.netGap).toBeCloseTo(year.rawGap - year.reservesDrawdown, 6);
+      expect(year.deliveredSavings).toBeGreaterThanOrEqual(0);
+      expect(year.reservesDrawdown).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(year.structuralGap)).toBe(true);
+      expect(year.fundingBridge.modelled.councilTax - year.fundingBridge.baseline.councilTax).toBeCloseTo(year.fundingBridge.deltas.councilTax, 6);
+      expect(year.fundingBridge.modelled.businessRates - year.fundingBridge.baseline.businessRates).toBeCloseTo(year.fundingBridge.deltas.businessRates, 6);
+      expect(year.fundingBridge.modelled.grants - year.fundingBridge.baseline.grants).toBeCloseTo(year.fundingBridge.deltas.grants, 6);
+      expect(year.fundingBridge.modelled.otherFunding - year.fundingBridge.baseline.otherFunding).toBeCloseTo(year.fundingBridge.deltas.otherFunding, 6);
+    }
+
+    expect(result.totalGap).toBeCloseTo(result.years.reduce((sum, year) => sum + Math.max(0, year.rawGap), 0), 6);
+    expect(result.totalStructuralGap).toBeCloseTo(result.years.reduce((sum, year) => sum + Math.max(0, year.structuralGap), 0), 6);
   });
 });

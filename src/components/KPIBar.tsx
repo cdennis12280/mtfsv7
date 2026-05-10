@@ -23,6 +23,7 @@ interface KPIProps {
   status?: 'good' | 'warning' | 'critical' | 'neutral';
   pulse?: boolean;
   tooltip?: string;
+  onClick?: () => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -32,10 +33,15 @@ const statusColors: Record<string, string> = {
   neutral: '#3b82f6',
 };
 
-function KPI({ icon, label, value, sub, status = 'neutral', pulse, tooltip }: KPIProps) {
+function KPI({ icon, label, value, sub, status = 'neutral', pulse, tooltip, onClick }: KPIProps) {
   const color = statusColors[status];
   return (
-    <div className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 border-r border-[rgba(99,179,237,0.07)] last:border-r-0" title={tooltip ?? `${label}: ${value}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 border-r border-[rgba(99,179,237,0.07)] last:border-r-0 text-left hover:bg-[rgba(99,179,237,0.04)]"
+      title={tooltip ? `${tooltip} Click to open calculation trace.` : `${label}: ${value}`}
+    >
       <div
         className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
         style={{ background: `${color}18`, border: `1px solid ${color}30` }}
@@ -60,7 +66,7 @@ function KPI({ icon, label, value, sub, status = 'neutral', pulse, tooltip }: KP
         </div>
         {sub && <p className="text-[9px] text-[#4a6080] truncate mt-0.5">{sub}</p>}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -98,7 +104,11 @@ function RiskGauge({ score }: { score: number }) {
 }
 
 export function KPIBar() {
-  const { result, audienceMode } = useMTFSStore();
+  const { result, audienceMode, setActiveTab } = useMTFSStore();
+  const openTrace = () => {
+    setActiveTab('summary');
+    window.setTimeout(() => document.getElementById('calculation-trace')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  };
   const {
     totalGap,
     yearReservesExhausted,
@@ -129,6 +139,7 @@ export function KPIBar() {
         status={gapStatus}
         pulse={structuralDeficitFlag}
         tooltip="Total cumulative budget shortfall over 5 years after planned mitigations."
+        onClick={openTrace}
         />
         <KPI
         icon={<PiggyBank size={14} />}
@@ -138,6 +149,7 @@ export function KPIBar() {
         status={reservesStatus}
         pulse={!!yearReservesExhausted}
         tooltip="Shows whether closing reserves remain at prudent levels through the planning period."
+        onClick={openTrace}
         />
         <KPI
         icon={<TrendingDown size={14} />}
@@ -146,6 +158,7 @@ export function KPIBar() {
         sub={audienceMode === 'members' ? 'Average each year to break even' : 'Annual average to balance'}
         status={savingsAsBudgetPct > 8 ? 'warning' : 'neutral'}
         tooltip="Average recurring savings required each year to maintain a balanced medium-term position."
+        onClick={openTrace}
         />
         <KPI
         icon={<Percent size={14} />}
@@ -154,6 +167,7 @@ export function KPIBar() {
         sub={ctSub}
         status={ctStatus}
         tooltip="Illustrative council tax percentage equivalent of the Year 1 shortfall."
+        onClick={openTrace}
         />
         <KPI
         icon={<BarChart3 size={14} />}
@@ -162,6 +176,7 @@ export function KPIBar() {
         sub="of 5yr expenditure"
         status={savingsAsBudgetPct > 8 ? 'warning' : 'good'}
         tooltip="Delivered savings as a share of total five-year expenditure."
+        onClick={openTrace}
         />
         <div>
           <RiskGauge score={overallRiskScore} />

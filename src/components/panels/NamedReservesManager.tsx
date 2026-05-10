@@ -2,14 +2,30 @@ import React, { useState } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronRight, PiggyBank, Upload, Download, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { Card } from '../ui/Card';
-import { Toggle } from '../ui/SliderControl';
-import type { NamedReserve } from '../../types/financial';
+import type { NamedReserve, ReserveCategory } from '../../types/financial';
 
 function fmtK(v: number) {
   return `£${Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`;
 }
 
 const YEAR_LABELS = ['Yr 1', 'Yr 2', 'Yr 3', 'Yr 4', 'Yr 5'];
+const RESERVE_CATEGORY_LABELS: Record<ReserveCategory, string> = {
+  general_fund: 'General Fund',
+  service_specific: 'Service Specific',
+  ringfenced: 'Ringfenced',
+  technical: 'Technical',
+};
+
+const RESERVE_CATEGORY_COLORS: Record<ReserveCategory, string> = {
+  general_fund: '#3b82f6',
+  service_specific: '#8b5cf6',
+  ringfenced: '#10b981',
+  technical: '#f59e0b',
+};
+
+function reserveCategory(reserve: NamedReserve): ReserveCategory {
+  return reserve.category ?? (reserve.isEarmarked ? 'service_specific' : 'general_fund');
+}
 
 function ReserveRow({ reserve }: { reserve: NamedReserve }) {
   const { updateNamedReserve, removeNamedReserve, result } = useMTFSStore();
@@ -20,6 +36,7 @@ function ReserveRow({ reserve }: { reserve: NamedReserve }) {
     (y) => y.namedReserveResults.find((r) => r.id === reserve.id)
   );
   const closingY5 = yearResults[4]?.closingBalance ?? reserve.openingBalance;
+  const category = reserveCategory(reserve);
 
   return (
     <div className="border border-[rgba(99,179,237,0.08)] rounded-xl mb-2 overflow-hidden">
@@ -28,12 +45,12 @@ function ReserveRow({ reserve }: { reserve: NamedReserve }) {
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${reserve.isEarmarked ? 'bg-[#8b5cf6]' : 'bg-[#3b82f6]'}`} />
+          <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: RESERVE_CATEGORY_COLORS[category] }} />
           <div className="min-w-0">
             <p className="text-[12px] font-semibold text-[#f0f4ff] truncate">{reserve.name || 'Unnamed reserve'}</p>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${reserve.isEarmarked ? 'bg-[rgba(139,92,246,0.12)] text-[#8b5cf6]' : 'bg-[rgba(59,130,246,0.12)] text-[#3b82f6]'}`}>
-                {reserve.isEarmarked ? 'Earmarked' : 'General Fund'}
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold" style={{ color: RESERVE_CATEGORY_COLORS[category], background: `${RESERVE_CATEGORY_COLORS[category]}1f` }}>
+                {RESERVE_CATEGORY_LABELS[category]}
               </span>
               {reserve.purpose && <span className="text-[9px] text-[#4a6080] truncate">{reserve.purpose}</span>}
             </div>
@@ -106,13 +123,21 @@ function ReserveRow({ reserve }: { reserve: NamedReserve }) {
                 className="w-full bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg px-3 py-1.5 text-[11px] mono text-[#f0f4ff] outline-none"
               />
             </div>
-            <div className="flex flex-col justify-end">
-              <Toggle
-                label="Earmarked Reserve"
-                value={reserve.isEarmarked}
-                tooltip="Earmarked reserves are held for specific purposes. General Fund reserves are available to the S151 Officer for general risk."
-                onChange={(v) => updateNamedReserve(reserve.id, { isEarmarked: v })}
-              />
+            <div>
+              <label className="text-[10px] text-[#4a6080] block mb-1">Reserve Category</label>
+              <select
+                className="w-full bg-[#080c14] border border-[rgba(99,179,237,0.12)] rounded-lg px-3 py-1.5 text-[11px] text-[#f0f4ff] outline-none"
+                value={category}
+                onChange={(e) => {
+                  const next = e.target.value as ReserveCategory;
+                  updateNamedReserve(reserve.id, { category: next, isEarmarked: next !== 'general_fund' });
+                }}
+              >
+                <option value="general_fund">General Fund</option>
+                <option value="service_specific">Service Specific</option>
+                <option value="ringfenced">Ringfenced</option>
+                <option value="technical">Technical</option>
+              </select>
             </div>
           </div>
 
@@ -218,6 +243,7 @@ export function NamedReservesManager() {
       id,
       name: '',
       purpose: '',
+      category: 'service_specific',
       openingBalance: 1000,
       plannedContributions: [0, 0, 0, 0, 0],
       plannedDrawdowns: [0, 0, 0, 0, 0],
@@ -241,6 +267,14 @@ export function NamedReservesManager() {
     if (['false', 'no', 'n', '0'].includes(n)) return false;
     return fallback;
   };
+  const toCategory = (value: unknown, isEarmarked: boolean): ReserveCategory => {
+    const n = normalize(value);
+    if (['generalfund', 'general', 'gf', 'generalreserve'].includes(n)) return 'general_fund';
+    if (['servicespecific', 'service', 'service reserve', 'servicereserve'].includes(n)) return 'service_specific';
+    if (['ringfenced', 'ringfence', 'restricted'].includes(n)) return 'ringfenced';
+    if (['technical', 'technicalreserve'].includes(n)) return 'technical';
+    return isEarmarked ? 'service_specific' : 'general_fund';
+  };
 
   const reserveFromRow = (row: Record<string, unknown>, idx: number): NamedReserve | null => {
     const pick = (...keys: string[]) => {
@@ -252,13 +286,16 @@ export function NamedReservesManager() {
     const name = String(pick('name', 'reservename') ?? '').trim();
     const openingBalance = toNumber(pick('openingbalance', 'opening'));
     if (!name && openingBalance === 0) return null;
+    const isEarmarked = toBool(pick('isearmarked', 'earmarked'), true);
+    const category = toCategory(pick('category', 'reservecategory'), isEarmarked);
 
     return {
       id: `nr-import-${Date.now()}-${idx}`,
       name: name || `Imported Reserve ${idx + 1}`,
       purpose: String(pick('purpose', 'description') ?? '').trim(),
+      category,
       openingBalance,
-      isEarmarked: toBool(pick('isearmarked', 'earmarked'), true),
+      isEarmarked: category !== 'general_fund',
       minimumBalance: toNumber(pick('minimumbalance', 'minimum')),
       plannedContributions: [
         toNumber(pick('contriby1', 'contributiony1', 'y1contrib')),
@@ -341,6 +378,7 @@ export function NamedReservesManager() {
       const headers = [
         'name',
         'purpose',
+        'category',
         'openingBalance',
         'isEarmarked',
         'minimumBalance',
@@ -358,21 +396,21 @@ export function NamedReservesManager() {
       const templateRows = [headers, Array(headers.length).fill('')];
       const good1Rows = [
         headers,
-        ['General Fund Reserve', 'Core resilience buffer', 12500, false, 8000, 250, 250, 300, 300, 300, 400, 450, 500, 500, 550],
-        ['Insurance Reserve', 'Property and liability risk pool', 7200, true, 4000, 100, 100, 100, 100, 100, 250, 250, 275, 300, 300],
-        ['Transformation Reserve', 'Invest-to-save and digital change', 6500, true, 1500, 200, 200, 150, 100, 100, 700, 850, 950, 900, 750],
+        ['General Fund Reserve', 'Core resilience buffer', 'general_fund', 12500, false, 8000, 250, 250, 300, 300, 300, 400, 450, 500, 500, 550],
+        ['Insurance Reserve', 'Property and liability risk pool', 'technical', 7200, true, 4000, 100, 100, 100, 100, 100, 250, 250, 275, 300, 300],
+        ['Transformation Reserve', 'Invest-to-save and digital change', 'service_specific', 6500, true, 1500, 200, 200, 150, 100, 100, 700, 850, 950, 900, 750],
       ];
       const good2Rows = [
         headers,
-        ['General Fund Reserve', 'Core resilience buffer', 14500, false, 9000, 350, 350, 400, 450, 450, 300, 350, 400, 450, 500],
-        ['Adult Social Care Pressures Reserve', 'Demand volatility cover', 5100, true, 2500, 50, 50, 50, 50, 50, 450, 450, 500, 550, 600],
-        ['Capital Risk Reserve', 'Capital financing volatility', 4300, true, 2000, 75, 75, 75, 75, 75, 200, 250, 250, 300, 350],
+        ['General Fund Reserve', 'Core resilience buffer', 'general_fund', 14500, false, 9000, 350, 350, 400, 450, 450, 300, 350, 400, 450, 500],
+        ['Adult Social Care Pressures Reserve', 'Demand volatility cover', 'service_specific', 5100, true, 2500, 50, 50, 50, 50, 50, 450, 450, 500, 550, 600],
+        ['Capital Risk Reserve', 'Capital financing volatility', 'technical', 4300, true, 2000, 75, 75, 75, 75, 75, 200, 250, 250, 300, 350],
       ];
       const badRows = [
         headers,
-        ['General Fund Reserve', 'Overstretched reserve position', 4200, false, 8000, 0, 0, 0, 0, 0, 700, 800, 900, 1000, 1100],
-        ['Insurance Reserve', 'Underfunded claims risk', 2100, true, 3500, 0, 0, 0, 0, 0, 350, 400, 450, 500, 550],
-        ['Transformation Reserve', 'Heavy drawdown with low replenishment', 1800, true, 1200, 25, 25, 25, 25, 25, 500, 550, 600, 650, 700],
+        ['General Fund Reserve', 'Overstretched reserve position', 'general_fund', 4200, false, 8000, 0, 0, 0, 0, 0, 700, 800, 900, 1000, 1100],
+        ['Insurance Reserve', 'Underfunded claims risk', 'technical', 2100, true, 3500, 0, 0, 0, 0, 0, 350, 400, 450, 500, 550],
+        ['Transformation Reserve', 'Heavy drawdown with low replenishment', 'service_specific', 1800, true, 1200, 25, 25, 25, 25, 25, 500, 550, 600, 650, 700],
       ];
       const instructionsRows = [
         ['Named Reserves Schedule Template - Instructions'],
@@ -390,6 +428,7 @@ export function NamedReservesManager() {
         ['4) In Named Reserves Schedule click Import CSV/XLSX and select your file'],
         [''],
         ['Field guidance'],
+        ['- category accepts general_fund, service_specific, ringfenced, technical'],
         ['- openingBalance, minimumBalance, contribY1..Y5, drawY1..Y5 are in £000'],
         ['- isEarmarked accepts true/false, yes/no, 1/0'],
         ['- contrib* are planned contributions into reserve'],
@@ -427,8 +466,10 @@ export function NamedReservesManager() {
     const yr = result.years[4]?.namedReserveResults.find((nr) => nr.id === r.id);
     return s + (yr?.closingBalance ?? r.openingBalance);
   }, 0);
-  const earmarkedOpening = namedReserves.filter((r) => r.isEarmarked).reduce((s, r) => s + r.openingBalance, 0);
-  const gfOpening = namedReserves.filter((r) => !r.isEarmarked).reduce((s, r) => s + r.openingBalance, 0);
+  const categoryOpening = namedReserves.reduce<Record<ReserveCategory, number>>((acc, r) => {
+    acc[reserveCategory(r)] += r.openingBalance;
+    return acc;
+  }, { general_fund: 0, service_specific: 0, ringfenced: 0, technical: 0 });
 
   return (
     <div className="space-y-4">
@@ -488,11 +529,13 @@ export function NamedReservesManager() {
       )}
 
       {namedReserves.length > 0 && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
           {[
             { label: 'Total Opening', value: fmtK(totalOpening), color: '#3b82f6' },
-            { label: 'General Fund Opening', value: fmtK(gfOpening), color: '#3b82f6' },
-            { label: 'Earmarked Opening', value: fmtK(earmarkedOpening), color: '#8b5cf6' },
+            { label: 'General Fund', value: fmtK(categoryOpening.general_fund), color: RESERVE_CATEGORY_COLORS.general_fund },
+            { label: 'Service Specific', value: fmtK(categoryOpening.service_specific), color: RESERVE_CATEGORY_COLORS.service_specific },
+            { label: 'Ringfenced', value: fmtK(categoryOpening.ringfenced), color: RESERVE_CATEGORY_COLORS.ringfenced },
+            { label: 'Technical', value: fmtK(categoryOpening.technical), color: RESERVE_CATEGORY_COLORS.technical },
             { label: 'Y5 Total Closing', value: fmtK(totalY5), color: totalY5 < totalOpening * 0.5 ? '#ef4444' : '#10b981' },
           ].map((kpi) => (
             <Card key={kpi.label}>
@@ -511,7 +554,7 @@ export function NamedReservesManager() {
             The model uses the flat general fund / earmarked reserves from the Baseline Editor
           </p>
           <p className="text-[10px] text-[#4a6080] mt-2">
-            Examples: General Fund, Insurance Reserve, Transformation Reserve, SEND Reserve, Carbon Reserve
+            Examples: General Fund, Service Specific, Ringfenced and Technical reserves
           </p>
         </div>
       ) : (

@@ -14,6 +14,7 @@ export function HighValuePanel() {
     baseline,
     result,
     updateCouncilTaxBaseConfig,
+    updateBusinessRatesConfig,
     addGrantScheduleEntry,
     updateGrantScheduleEntry,
     removeGrantScheduleEntry,
@@ -27,6 +28,7 @@ export function HighValuePanel() {
 
   const {
     councilTaxBaseConfig,
+    businessRatesConfig,
     grantSchedule,
     ascCohortModel,
     capitalFinancing,
@@ -85,6 +87,9 @@ export function HighValuePanel() {
         value,
         certainty: toCertainty(pick('certainty', 'confidence')),
         endYear: toEndYear(pick('endyear', 'endy', 'yearend', 'ends')),
+        ringfenced: String(pick('ringfenced', 'ringfencedstatus') ?? '').toLowerCase() === 'yes',
+        inflationLinked: String(pick('inflationlinked', 'inflation') ?? '').toLowerCase() === 'yes',
+        replacementAssumption: toNumber(pick('replacementassumption', 'replacementpct', 'replacement'), 0),
       });
     }
     return parsed;
@@ -97,6 +102,9 @@ export function HighValuePanel() {
       value: 500,
       certainty: 'indicative',
       endYear: 3,
+      ringfenced: false,
+      inflationLinked: false,
+      replacementAssumption: 0,
     };
     addGrantScheduleEntry(entry);
   };
@@ -226,6 +234,45 @@ export function HighValuePanel() {
             <p className="text-[#4a6080] mb-1">Parish Precepts (£k)</p>
             <input type="number" className="w-full input" value={councilTaxBaseConfig.parishPrecepts} onChange={(e) => updateCouncilTaxBaseConfig({ parishPrecepts: Number(e.target.value) || 0 })} title="Total parish and town precepts in thousands of pounds." />
           </div>
+          <div>
+            <p className="text-[#4a6080] mb-1">Collection Fund Surplus/(Deficit) (£k)</p>
+            <input type="number" className="w-full input" value={councilTaxBaseConfig.collectionFundSurplusDeficit} onChange={(e) => updateCouncilTaxBaseConfig({ collectionFundSurplusDeficit: Number(e.target.value) || 0 })} title="Council tax collection fund surplus or deficit adjustment." />
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-1.5">
+            <CardTitle>Business Rates Funding Model</CardTitle>
+            <RichTooltip content="Models retained business rates using growth, appeals, tariff/top-up, pooling, safety-net/levy and reset assumptions." />
+          </div>
+        </CardHeader>
+        <div className="grid grid-cols-3 gap-3 text-[11px]">
+          <label className="flex items-center gap-2 text-[#8ca0c0]">
+            <input type="checkbox" checked={businessRatesConfig.enabled} onChange={(e) => updateBusinessRatesConfig({ enabled: e.target.checked })} />
+            Enable rates model
+          </label>
+          {[
+            ['Baseline rates (£k)', 'baselineRates'],
+            ['Appeals provision (£k)', 'appealsProvision'],
+            ['Tariff / top-up (£k)', 'tariffTopUp'],
+            ['Levy / safety-net (£k)', 'levySafetyNet'],
+            ['Pooling gain (£k)', 'poolingGain'],
+            ['Collection fund adjustment (£k)', 'collectionFundAdjustment'],
+            ['Reset adjustment (£k)', 'resetAdjustment'],
+          ].map(([label, key]) => (
+            <div key={key}>
+              <p className="text-[#4a6080] mb-1">{label}</p>
+              <input type="number" className="w-full input" value={Number(businessRatesConfig[key as keyof typeof businessRatesConfig]) || 0} onChange={(e) => updateBusinessRatesConfig({ [key]: Number(e.target.value) || 0 })} />
+            </div>
+          ))}
+          <div>
+            <p className="text-[#4a6080] mb-1">Reset Year</p>
+            <select className="w-full input" value={businessRatesConfig.resetYear} onChange={(e) => updateBusinessRatesConfig({ resetYear: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 })}>
+              {[1, 2, 3, 4, 5].map((year) => <option key={year} value={year}>Y{year}</option>)}
+            </select>
+          </div>
         </div>
       </Card>
 
@@ -277,16 +324,18 @@ export function HighValuePanel() {
           )}
           {grantSchedule.length === 0 && <p className="text-[11px] text-[#4a6080]">No grants configured.</p>}
           {grantSchedule.length > 0 && (
-            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center px-1">
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 items-center px-1">
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest">Grant</p>
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Value (£k)</p>
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Certainty</p>
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">End Year</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Ringfenced</p>
+              <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Replacement %</p>
               <p className="text-[10px] text-[#4a6080] uppercase tracking-widest text-right">Action</p>
             </div>
           )}
           {grantSchedule.map((g) => (
-            <div key={g.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 items-center">
+            <div key={g.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-2 items-center">
               <input className="input" placeholder="Grant name" value={g.name} onChange={(e) => updateGrantScheduleEntry(g.id, { name: e.target.value })} title="Grant label used in reports." />
               <input type="number" className="input" value={g.value} onChange={(e) => updateGrantScheduleEntry(g.id, { value: Number(e.target.value) || 0 })} title="Annual grant value in £000s." />
               <select className="input" value={g.certainty} onChange={(e) => updateGrantScheduleEntry(g.id, { certainty: e.target.value as GrantCertainty })} title="Confidence level used in weighted funding calculations.">
@@ -297,6 +346,10 @@ export function HighValuePanel() {
               <select className="input" value={g.endYear} onChange={(e) => updateGrantScheduleEntry(g.id, { endYear: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 })} title="Final MTFS year this grant is assumed to continue.">
                 {[1, 2, 3, 4, 5].map((y) => <option key={y} value={y}>Ends Y{y}</option>)}
               </select>
+              <select className="input" value={g.ringfenced ? 'yes' : 'no'} onChange={(e) => updateGrantScheduleEntry(g.id, { ringfenced: e.target.value === 'yes' })}>
+                <option value="no">No</option><option value="yes">Yes</option>
+              </select>
+              <input type="number" className="input" value={g.replacementAssumption ?? 0} onChange={(e) => updateGrantScheduleEntry(g.id, { replacementAssumption: Number(e.target.value) || 0 })} title="Percentage of grant assumed to continue after end year." />
               <button onClick={() => removeGrantScheduleEntry(g.id)} className="text-[#ef4444]" title="Remove this grant line."><Trash2 size={12} /></button>
             </div>
           ))}

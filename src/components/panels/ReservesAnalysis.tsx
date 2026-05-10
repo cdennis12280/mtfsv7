@@ -7,6 +7,7 @@ import { useMTFSStore } from '../../store/mtfsStore';
 import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { AlertTriangle, TrendingDown, Shield } from 'lucide-react';
 import { DEFAULT_BASELINE } from '../../engine/calculations';
+import type { NamedReserve, ReserveCategory } from '../../types/financial';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -43,17 +44,29 @@ const CustomTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   );
 };
 
+const reserveCategory = (reserve: NamedReserve): ReserveCategory =>
+  reserve.category ?? (reserve.isEarmarked ? 'service_specific' : 'general_fund');
+
 export function ReservesAnalysis() {
   const { result, baseline } = useMTFSStore();
   const { years } = result;
   const safeBaseline = baseline || DEFAULT_BASELINE;
   const useNamedReserves = safeBaseline.namedReserves.length > 0;
   const openingGeneralFund = useNamedReserves
-    ? safeBaseline.namedReserves.filter((r) => !r.isEarmarked).reduce((sum, r) => sum + r.openingBalance, 0)
+    ? safeBaseline.namedReserves.filter((r) => reserveCategory(r) === 'general_fund').reduce((sum, r) => sum + r.openingBalance, 0)
     : safeBaseline.generalFundReserves;
   const openingEarmarked = useNamedReserves
-    ? safeBaseline.namedReserves.filter((r) => r.isEarmarked).reduce((sum, r) => sum + r.openingBalance, 0)
+    ? safeBaseline.namedReserves.filter((r) => reserveCategory(r) !== 'general_fund').reduce((sum, r) => sum + r.openingBalance, 0)
     : safeBaseline.earmarkedReserves;
+  const openingServiceSpecific = useNamedReserves
+    ? safeBaseline.namedReserves.filter((r) => reserveCategory(r) === 'service_specific').reduce((sum, r) => sum + r.openingBalance, 0)
+    : safeBaseline.earmarkedReserves;
+  const openingRingfenced = useNamedReserves
+    ? safeBaseline.namedReserves.filter((r) => reserveCategory(r) === 'ringfenced').reduce((sum, r) => sum + r.openingBalance, 0)
+    : 0;
+  const openingTechnical = useNamedReserves
+    ? safeBaseline.namedReserves.filter((r) => reserveCategory(r) === 'technical').reduce((sum, r) => sum + r.openingBalance, 0)
+    : 0;
   const openingTotal = openingGeneralFund + openingEarmarked;
   const minThreshold = result.effectiveMinimumReservesThreshold;
 
@@ -61,13 +74,17 @@ export function ReservesAnalysis() {
     {
       year: 'Baseline',
       'General Fund': Math.round(openingGeneralFund),
-      'Earmarked': Math.round(openingEarmarked),
+      'Service Specific': Math.round(openingServiceSpecific),
+      Ringfenced: Math.round(openingRingfenced),
+      Technical: Math.round(openingTechnical),
       Total: Math.round(openingTotal),
     },
     ...years.map((y) => ({
       year: y.label,
       'General Fund': Math.round(y.generalFundClosingBalance),
-      'Earmarked': Math.round(y.earmarkedClosingBalance),
+      'Service Specific': Math.round(y.reserveCategoryClosingBalances.service_specific),
+      Ringfenced: Math.round(y.reserveCategoryClosingBalances.ringfenced),
+      Technical: Math.round(y.reserveCategoryClosingBalances.technical),
       Total: Math.round(y.totalClosingReserves),
     })),
   ];
@@ -102,7 +119,7 @@ export function ReservesAnalysis() {
   }, [years, statusFilter, yearFilter]);
 
   return (
-    <div className="space-y-4">
+    <div id="reserves-analysis" className="space-y-4 scroll-mt-32">
       {/* Status Cards */}
       <div className="grid grid-cols-3 gap-3">
         <Card>
@@ -111,7 +128,7 @@ export function ReservesAnalysis() {
             <span className="text-[10px] text-[#4a6080] uppercase tracking-widest font-semibold">Opening Reserves</span>
           </div>
           <p className="mono text-lg font-bold text-[#3b82f6]">{fmtK(openingTotal)}</p>
-          <p className="text-[9px] text-[#4a6080] mt-0.5">General Fund + Earmarked</p>
+          <p className="text-[9px] text-[#4a6080] mt-0.5">General Fund + restricted categories</p>
         </Card>
 
         <Card>
@@ -158,10 +175,6 @@ export function ReservesAnalysis() {
                   <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
                 </linearGradient>
-                <linearGradient id="gradEM" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.02} />
-                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(99,179,237,0.06)" />
               <XAxis dataKey="year" tick={{ fill: '#4a6080', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -182,11 +195,9 @@ export function ReservesAnalysis() {
                 fill="url(#gradGF)" dot={{ r: 3, fill: '#3b82f6' }} activeDot={{ r: 5 }}>
                 <LabelList dataKey="General Fund" position="top" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
               </Area>
-              <Area
-                type="monotone" dataKey="Earmarked" stroke="#8b5cf6" strokeWidth={2}
-                fill="url(#gradEM)" dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }}>
-                <LabelList dataKey="Earmarked" position="bottom" formatter={(v: unknown) => fmtK(Number(v) || 0)} fill="#8ca0c0" fontSize={9} />
-              </Area>
+              <Area type="monotone" dataKey="Service Specific" stroke="#8b5cf6" strokeWidth={2} fill="#8b5cf6" fillOpacity={0.16} dot={{ r: 3, fill: '#8b5cf6' }} activeDot={{ r: 5 }} />
+              <Area type="monotone" dataKey="Ringfenced" stroke="#10b981" strokeWidth={2} fill="#10b981" fillOpacity={0.14} dot={{ r: 3, fill: '#10b981' }} activeDot={{ r: 5 }} />
+              <Area type="monotone" dataKey="Technical" stroke="#f59e0b" strokeWidth={2} fill="#f59e0b" fillOpacity={0.14} dot={{ r: 3, fill: '#f59e0b' }} activeDot={{ r: 5 }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>

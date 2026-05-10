@@ -3,6 +3,9 @@ import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { Database, BookOpen, AlertCircle, Download, FileText } from 'lucide-react';
 import { useMTFSStore } from '../../store/mtfsStore';
 import { exportCommitteeReportPdf, exportOnePageMemberBriefPdf } from '../../utils/governancePdf';
+import { normalizeBaseline, runCalculations } from '../../engine/calculations';
+import { coerceYearProfile, y1 } from '../../utils/yearProfile';
+import type { YearProfile5 } from '../../types/financial';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -11,12 +14,16 @@ function fmtK(v: number) {
 
 
 export function GovernancePanel() {
-  const { result, assumptions, baseline, savingsProposals, authorityConfig } = useMTFSStore();
-  const fmtProfile = (p: { y1: number; y2: number; y3: number; y4: number; y5: number }, suffix = '%') =>
-    `${p.y1.toFixed(1)}${suffix} / ${p.y2.toFixed(1)}${suffix} / ${p.y3.toFixed(1)}${suffix} / ${p.y4.toFixed(1)}${suffix} / ${p.y5.toFixed(1)}${suffix}`;
+  const { result, assumptions, baseline, savingsProposals, authorityConfig, noteGovernanceExport, workflowState, snapshots, auditTrail, assumptionHistory, freezeAssumptionsForPack, runEndToEndValidation } = useMTFSStore();
+  const safeBaseline = React.useMemo(() => normalizeBaseline(baseline), [baseline]);
+  const fmtProfile = (p: YearProfile5 | number, suffix = '%') => {
+    const profile = coerceYearProfile(p);
+    return `${profile.y1.toFixed(1)}${suffix} / ${profile.y2.toFixed(1)}${suffix} / ${profile.y3.toFixed(1)}${suffix} / ${profile.y4.toFixed(1)}${suffix} / ${profile.y5.toFixed(1)}${suffix}`;
+  };
 
   const handleFullExport = () => {
-    exportCommitteeReportPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
+    exportCommitteeReportPdf(result, assumptions, safeBaseline, savingsProposals, authorityConfig);
+    noteGovernanceExport('s151Pack');
   };
 
   const handleCsvExport = () => {
@@ -40,16 +47,64 @@ export function GovernancePanel() {
     a.download = `MTFS_Data_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    noteGovernanceExport('dataCsv');
+  };
+
+  const handleAuditExport = () => {
+    const assumptionRows = assumptionHistory.map((entry) => [
+      'assumption',
+      entry.id,
+      entry.timestamp,
+      entry.description.replaceAll(',', ';'),
+      '',
+      '',
+      '',
+    ]);
+    const auditRows = auditTrail.map((entry) => [
+      'model-run',
+      entry.id,
+      entry.timestamp,
+      entry.description.replaceAll(',', ';'),
+      entry.totalGap.toFixed(0),
+      entry.totalStructuralGap.toFixed(0),
+      entry.overallRiskScore.toFixed(0),
+    ]);
+    const headers = ['Type', 'Id', 'Timestamp', 'Description', 'TotalGap', 'StructuralGap', 'RiskScore'];
+    const csv = [headers, ...assumptionRows, ...auditRows].map((row) => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `MTFS_Audit_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    noteGovernanceExport('dataCsv');
   };
 
   const handleOnePageBriefExport = () => {
-    exportOnePageMemberBriefPdf(result, assumptions, baseline, savingsProposals, authorityConfig);
+    exportOnePageMemberBriefPdf(result, assumptions, safeBaseline, savingsProposals, authorityConfig);
+    noteGovernanceExport('memberBrief');
   };
+  const latestSnapshot = snapshots[0];
+  const latestSnapshotResult = latestSnapshot ? runCalculations(latestSnapshot.assumptions, latestSnapshot.baseline, latestSnapshot.savingsProposals) : null;
+  const snapshotGapDelta = latestSnapshotResult ? result.totalGap - latestSnapshotResult.totalGap : null;
 
   return (
-    <div className="space-y-4">
+    <div id="governance-readiness" className="space-y-4 scroll-mt-32">
       {/* Export actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => freezeAssumptionsForPack(`pack-${new Date().toISOString().slice(0, 10)}`)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.3)] text-[#10b981] text-[11px] font-semibold hover:bg-[rgba(16,185,129,0.18)] transition-colors"
+        >
+          Freeze Pack
+        </button>
+        <button
+          onClick={() => runEndToEndValidation()}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.12)] border border-[rgba(59,130,246,0.3)] text-[#60a5fa] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.2)] transition-colors"
+        >
+          Readiness Check
+        </button>
         <button
           onClick={handleOnePageBriefExport}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(59,130,246,0.15)] border border-[rgba(59,130,246,0.3)] text-[#3b82f6] text-[11px] font-semibold hover:bg-[rgba(59,130,246,0.25)] transition-colors"
@@ -71,9 +126,30 @@ export function GovernancePanel() {
           <Download size={13} />
           Data CSV
         </button>
+        <button
+          onClick={handleAuditExport}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[rgba(148,163,184,0.1)] border border-[rgba(148,163,184,0.25)] text-[#cbd5e1] text-[11px] font-semibold hover:bg-[rgba(148,163,184,0.16)] transition-colors"
+        >
+          <Download size={13} />
+          Audit CSV
+        </button>
         <span className="text-[10px] text-[#4a6080]">
           Report branded for: <span className="text-[#8ca0c0] font-semibold">{authorityConfig.authorityName}</span>
         </span>
+      </div>
+      <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0] flex flex-wrap gap-3">
+        <span>Provenance: Baseline lock {workflowState.baselineLocked ? 'ON' : 'OFF'}</span>
+        <span>Pack freeze {workflowState.assumptionsFrozen ? `ON (${workflowState.frozenLabel ?? 'locked'})` : 'OFF'}</span>
+        <span>Overlay imports {safeBaseline.overlayImports.length}</span>
+        <span>Manual overrides {safeBaseline.manualAdjustments.length}</span>
+        <span>Exports: Brief {workflowState.governanceExports.memberBrief} · S151 {workflowState.governanceExports.s151Pack} · CSV {workflowState.governanceExports.dataCsv}</span>
+      </div>
+      <div className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(8,12,20,0.5)] px-3 py-2 text-[10px] text-[#8ca0c0]">
+        <span className="font-semibold text-[#c9d6ef]">What changed since last snapshot: </span>
+        {latestSnapshot
+          ? `Latest snapshot "${latestSnapshot.name}" was saved ${new Date(latestSnapshot.createdAt).toLocaleString('en-GB')}. Current pack has ${savingsProposals.length - latestSnapshot.savingsProposals.length} savings proposal delta(s)`
+          : 'No saved snapshot yet. Save a snapshot before final governance export to create a comparison point.'}
+        {snapshotGapDelta !== null ? `; gap movement ${fmtK(snapshotGapDelta)}.` : '.'}
       </div>
 
       {/* Data Sources */}
@@ -84,9 +160,9 @@ export function GovernancePanel() {
         </CardHeader>
         <div className="space-y-2">
           {[
-            { source: 'Baseline Data', type: 'User Input', desc: `Core budget figures entered via Baseline Editor. ${baseline.customServiceLines.length} custom service line(s) defined.`, ok: true },
+            { source: 'Baseline Data', type: 'User Input', desc: `Core budget figures entered via Baseline Editor. ${safeBaseline.customServiceLines.length} custom service line(s) defined.`, ok: true },
             { source: 'Savings Programme', type: 'User Input', desc: `${savingsProposals.length > 0 ? `${savingsProposals.length} proposals entered in Savings Programme builder` : 'Using policy lever target  -  no individual proposals entered'}.`, ok: savingsProposals.length > 0 },
-            { source: 'Named Reserves', type: 'User Input', desc: `${baseline.namedReserves.length > 0 ? `${baseline.namedReserves.length} named reserve(s) defined` : 'Using flat general fund / earmarked split from Baseline Editor'}.`, ok: baseline.namedReserves.length > 0 },
+            { source: 'Named Reserves', type: 'User Input', desc: `${safeBaseline.namedReserves.length > 0 ? `${safeBaseline.namedReserves.length} named reserve(s) defined` : 'Using flat general fund / earmarked split from Baseline Editor'}.`, ok: safeBaseline.namedReserves.length > 0 },
             { source: 'CIPFA Methodology', type: 'Framework', desc: 'Driver-based expenditure modelling. Savings with delivery risk and time-lag ramp. Deterministic logic.', ok: true },
             { source: 'LGA 2003 s.25/26', type: 'Statutory', desc: 'Sustainability tests aligned to budget robustness and reserves adequacy statutory duties.', ok: true },
           ].map((ds, i) => (
@@ -167,10 +243,10 @@ export function GovernancePanel() {
             ['ASC Demand Growth (Y1-Y5)', fmtProfile(assumptions.expenditure.ascDemandGrowth)],
             ['CSC Demand Growth (Y1-Y5)', fmtProfile(assumptions.expenditure.cscDemandGrowth)],
             ['Savings Delivery Risk (Y1-Y5)', fmtProfile(assumptions.expenditure.savingsDeliveryRisk)],
-            ['Policy Savings Target (Y1)', fmtK(assumptions.policy.annualSavingsTarget.y1)],
+            ['Policy Savings Target (Y1)', fmtK(y1(assumptions.policy.annualSavingsTarget))],
             ['Savings Proposals', `${savingsProposals.length} entered`],
-            ['Named Reserves', `${baseline.namedReserves.length} defined`],
-            ['Custom Service Lines', `${baseline.customServiceLines.length} defined`],
+            ['Named Reserves', `${safeBaseline.namedReserves.length} defined`],
+            ['Custom Service Lines', `${safeBaseline.customServiceLines.length} defined`],
             ['Real Terms Mode', assumptions.advanced.realTermsToggle ? `Yes (${assumptions.advanced.inflationRate}%)` : 'No'],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between py-1.5 border-b border-[rgba(99,179,237,0.04)]">

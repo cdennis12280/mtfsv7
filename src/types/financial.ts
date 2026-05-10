@@ -58,10 +58,13 @@ export interface SavingsProposal {
 }
 
 // ─── Named Reserves (Item 15) ────────────────────────────────────────────────
+export type ReserveCategory = 'general_fund' | 'service_specific' | 'ringfenced' | 'technical';
+
 export interface NamedReserve {
   id: string;
   name: string;
   purpose: string;
+  category?: ReserveCategory;    // Defaults from isEarmarked for legacy data
   openingBalance: number;        // £000s
   plannedContributions: [number, number, number, number, number]; // £000s per year
   plannedDrawdowns: [number, number, number, number, number];    // £000s per year
@@ -78,6 +81,7 @@ export interface CouncilTaxBaseConfig {
   parishPrecepts: number;        // £000s
   corePreceptPct: number;        // %
   ascPreceptPct: number;         // %
+  collectionFundSurplusDeficit: number; // £000s (+ surplus / - deficit)
 }
 
 export type GrantCertainty = 'confirmed' | 'indicative' | 'assumed';
@@ -88,6 +92,22 @@ export interface GrantScheduleEntry {
   value: number;                 // £000s per annum
   certainty: GrantCertainty;
   endYear: 1 | 2 | 3 | 4 | 5;
+  ringfenced?: boolean;
+  inflationLinked?: boolean;
+  replacementAssumption?: number; // % of value retained after endYear
+}
+
+export interface BusinessRatesConfig {
+  enabled: boolean;
+  baselineRates: number;         // £000s
+  growthRate: YearProfile5;
+  appealsProvision: number;      // £000s reduction
+  tariffTopUp: number;           // £000s (+ top-up / - tariff)
+  levySafetyNet: number;         // £000s (+ safety-net / - levy)
+  poolingGain: number;           // £000s
+  collectionFundAdjustment: number; // £000s
+  resetAdjustment: number;       // £000s applied from resetYear
+  resetYear: 1 | 2 | 3 | 4 | 5;
 }
 
 export interface AscCohortModel {
@@ -141,7 +161,7 @@ export interface PaySpineConfig {
 
 export type FundingSource = 'general_fund' | 'grant' | 'other';
 export type PayAssumptionGroup = 'default' | 'teachers' | 'njc' | 'senior' | 'other';
-export type PayModelMode = 'pay_spine' | 'workforce_posts' | 'hybrid';
+export type PayModelMode = 'workforce_posts' | 'baseline';
 
 export interface WorkforcePost {
   id: string;
@@ -151,10 +171,15 @@ export interface WorkforcePost {
   fte: number;
   annualCost: number;
   payAssumptionGroup: PayAssumptionGroup;
+  vacancyFactor?: number;        // %
+  generalFundSplit?: number;     // %
+  grantFundSplit?: number;       // %
+  otherSplit?: number;           // %
 }
 
 export interface WorkforceModel {
   enabled: boolean;
+  /** Legacy snapshots may contain old mode values; active calculations ignore them and use posts when present. */
   mode: PayModelMode;
   posts: WorkforcePost[];
 }
@@ -165,19 +190,32 @@ export type ContractUpliftMethod = 'cpi' | 'rpi' | 'fixed' | 'custom';
 export interface ContractIndexationEntry {
   id: string;
   name: string;
+  supplier?: string;
+  service?: string;
+  fundingSource?: FundingSource;
   value: number;                 // £000s
   clause: ContractIndexationClause;
   bespokeRate: number;           // %
   effectiveFromYear: 1 | 2 | 3 | 4 | 5;
+  nextUpliftYear?: 1 | 2 | 3 | 4 | 5;
   reviewMonth: number;           // 1-12
   upliftMethod: ContractUpliftMethod;
   fixedRate: number;             // %
   customRate: number;            // %
   phaseInMonths: number;         // 0-12
+  capRate?: number;              // %
+  collarRate?: number;           // %
 }
 
 export interface ContractIndexationTracker {
   enabled: boolean;
+  indexAssumptions: {
+    cpi: YearProfile5;
+    rpi: YearProfile5;
+    nmw: YearProfile5;
+    fixed: YearProfile5;
+    bespoke: YearProfile5;
+  };
   contracts: ContractIndexationEntry[];
 }
 
@@ -220,6 +258,8 @@ export interface GrowthProposal {
   confidence: number; // 0-100
   yearlyPhasing: [number, number, number, number, number]; // % per year
   notes: string;
+  status?: 'Draft' | 'Service Reviewed' | 'Finance Reviewed' | 'Approved' | 'Rejected';
+  evidenceNote?: string;
 }
 
 export interface ManualAdjustment {
@@ -294,6 +334,7 @@ export interface BaselineData {
   customServiceLines: CustomServiceLine[];
   namedReserves: NamedReserve[];      // Item 15 — replaces flat reserves when populated
   councilTaxBaseConfig: CouncilTaxBaseConfig;
+  businessRatesConfig: BusinessRatesConfig;
   grantSchedule: GrantScheduleEntry[];
   ascCohortModel: AscCohortModel;
   capitalFinancing: CapitalFinancingConfig;
@@ -381,7 +422,13 @@ export interface Assumptions {
   advanced: AdvancedControls;
 }
 
-export type YearProfile5 = any;
+export interface YearProfile5 {
+  y1: number;
+  y2: number;
+  y3: number;
+  y4: number;
+  y5: number;
+}
 
 export interface AssumptionReviewFlag {
   requiresReview: boolean;
@@ -400,6 +447,7 @@ export interface CustomLineYearResult {
 export interface NamedReserveYearResult {
   id: string;
   name: string;
+  category: ReserveCategory;
   openingBalance: number;
   contribution: number;
   drawdown: number;
@@ -424,6 +472,15 @@ export interface YearResult {
   generalFundPayPressure: number;
   grantFundedPayPressure: number;
   otherFundedPayPressure: number;
+  payBudgetReconciliation: {
+    importedPayBudget: number;
+    baselinePay: number;
+    variance: number;
+    activeModelMode: PayModelMode;
+    generalFundBase: number;
+    grantFundedBase: number;
+    otherFundedBase: number;
+  };
   nonPayBase: number;
   nonPayInflationImpact: number;
   ascPressure: number;
@@ -439,6 +496,10 @@ export interface YearResult {
     method: ContractUpliftMethod;
     effectiveFactor: number;
     upliftCost: number;
+    appliedRate: number;
+    supplier?: string;
+    service?: string;
+    fundingSource?: FundingSource;
   }>;
   investToSaveNetImpact: number;
   growthProposalsImpact: number;
@@ -467,6 +528,7 @@ export interface YearResult {
   namedReserveResults: NamedReserveYearResult[];
   generalFundOpeningBalance: number;
   earmarkedOpeningBalance: number;
+  reserveCategoryClosingBalances: Record<ReserveCategory, number>;
   totalOpeningReserves: number;
   generalFundClosingBalance: number;
   earmarkedClosingBalance: number;
@@ -568,6 +630,25 @@ export interface Scenario {
   name: string;
   description: string;
   type: 'base' | 'optimistic' | 'pessimistic' | 'custom';
+  label?: 'Draft' | 'Reviewed' | 'Recommended' | 'Rejected' | 'Cabinet Pack';
+  owner?: string;
+  reviewDate?: string;
+  notes?: {
+    rationale: string;
+    assumptions: string;
+    tradeOffs: string;
+    risks: string;
+    decisionRequired: string;
+  };
+  versionHistory?: Array<{
+    timestamp: string;
+    description: string;
+  }>;
+  displayRole?: 'cfo' | 'head_of_finance' | 's151' | 'councillor';
+  confidence?: number;
+  rankingReason?: string;
+  decisionSummary?: string;
+  serviceImpactSummary?: string;
   assumptions: Assumptions;
   result: MTFSResult;
   createdAt: string;

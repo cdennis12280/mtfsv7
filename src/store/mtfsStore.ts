@@ -32,7 +32,20 @@ import {
   DEFAULT_AUTHORITY_CONFIG,
   runCalculations,
 } from '../engine/calculations';
+import { validateModel } from '../engine/validation';
 import { exportSnapshotToWorkbookBlob, importSnapshotFromWorkbookFile } from '../utils/snapshotExcel';
+import { buildCfoDemoDataset, CFO_DEMO_STEPS, type CfoDemoStep } from '../utils/cfoDemo';
+import { buildScenarioFromGoal, buildScenarioTemplates, exportScenarioAuditCsv, type ScenarioGoal } from '../utils/scenarioUtils';
+import { legacyPaySpineRowToWorkforcePost, migratePaySpineRowsToWorkforcePosts } from '../utils/workforcePay';
+import {
+  ROLE_PRESETS,
+  defaultRehearsalChecklist,
+  type AssumptionEditMode,
+  type PrintPreviewMode,
+  type RehearsalChecklist,
+  type RolePreset,
+  type SaveState,
+} from '../utils/uiUx';
 
 interface MTFSStore {
   assumptions: Assumptions;
@@ -51,14 +64,45 @@ interface MTFSStore {
   scenariosFocus: 'none' | 'snapshots';
   activeTab: string;
   activeRole: 'finance' | 'members';
+  rolePreset: RolePreset;
   viewMode: 'strategic' | 'technical';
   audienceMode: 'finance' | 'members';
+  assumptionEditMode: AssumptionEditMode;
+  activeSectionAnchor: string | null;
+  saveState: SaveState;
+  meetingMode: boolean;
+  printPreviewMode: PrintPreviewMode;
+  rehearsalChecklist: RehearsalChecklist;
+  lastImportSnapshot: {
+    label: string;
+    timestamp: string;
+    baseline: BaselineData;
+    assumptions: Assumptions;
+    savingsProposals: SavingsProposal[];
+    scenarios: Scenario[];
+  } | null;
   uiWarnings: Array<{ id: string; severity: 'warning' | 'critical'; message: string; targetTab: string }>;
   advancedPanelsOpen: Record<string, boolean>;
   accessibilityPreset: 'default' | 'large-text' | 'high-contrast' | 'dyslexia-friendly';
   densityMode: 'comfortable' | 'compact' | 'presentation';
   snapshots: ModelSnapshot[];
   peerBenchmark: PeerBenchmarkConfig;
+  cfoDemo: {
+    enabled: boolean;
+    step: CfoDemoStep;
+    startedAt?: string;
+    datasetLoaded: boolean;
+    rehearsal: Record<string, boolean>;
+  };
+  workflowState: {
+    baselineLocked: boolean;
+    assumptionsFrozen: boolean;
+    frozenLabel?: string;
+    governanceExports: { memberBrief: number; s151Pack: number; dataCsv: number };
+    currentWorkingSet?: { kind: 'snapshot' | 'scenario'; name: string; timestamp: string };
+    selectedDecisionOption?: { label: 'A' | 'B' | 'C'; name: string; sourceType: 'current' | 'scenario' | 'snapshot'; timestamp: string };
+    lastValidation?: { timestamp: string; blockers: string[]; warnings: string[] };
+  };
 
   setAssumptions: (a: Assumptions, description?: string) => void;
   updateFunding: (key: keyof Assumptions['funding'], value: number, description?: string) => void;
@@ -73,6 +117,7 @@ interface MTFSStore {
   importBaselinePartial: (partial: Partial<BaselineData>, description?: string) => void;
 
   updateCouncilTaxBaseConfig: (updates: Partial<BaselineData['councilTaxBaseConfig']>) => void;
+  updateBusinessRatesConfig: (updates: Partial<BaselineData['businessRatesConfig']>) => void;
   addGrantScheduleEntry: (entry: GrantScheduleEntry) => void;
   updateGrantScheduleEntry: (id: string, updates: Partial<GrantScheduleEntry>) => void;
   removeGrantScheduleEntry: (id: string) => void;
@@ -96,6 +141,7 @@ interface MTFSStore {
   updateContractEntry: (id: string, updates: Partial<ContractIndexationEntry>) => void;
   removeContractEntry: (id: string) => void;
   setContractTrackerEnabled: (enabled: boolean) => void;
+  updateContractIndexAssumptions: (updates: Partial<BaselineData['contractIndexationTracker']['indexAssumptions']>) => void;
 
   addInvestToSaveProposal: (proposal: InvestToSaveProposal) => void;
   updateInvestToSaveProposal: (id: string, updates: Partial<InvestToSaveProposal>) => void;
@@ -142,11 +188,23 @@ interface MTFSStore {
   appendAssumptionHistory: (description: string) => void;
 
   saveScenario: (name: string, description: string, type: Scenario['type']) => void;
+  updateScenario: (id: string, updates: Partial<Scenario>, description?: string) => void;
+  cloneScenario: (id: string) => void;
   deleteScenario: (id: string) => void;
   loadScenario: (id: string) => void;
 
   setActiveTab: (tab: string) => void;
   setActiveRole: (role: 'finance' | 'members') => void;
+  setRolePreset: (role: RolePreset) => void;
+  setAssumptionEditMode: (mode: AssumptionEditMode) => void;
+  setActiveSectionAnchor: (anchor: string | null) => void;
+  setSaveState: (state: SaveState) => void;
+  setMeetingMode: (enabled: boolean) => void;
+  setPrintPreviewMode: (mode: PrintPreviewMode) => void;
+  toggleRehearsalChecklistItem: (id: keyof RehearsalChecklist) => void;
+  markRehearsalChecklistItem: (id: keyof RehearsalChecklist, value: boolean) => void;
+  resetWorkflowUiState: () => void;
+  undoLastImport: () => void;
   setUiWarnings: (warnings: Array<{ id: string; severity: 'warning' | 'critical'; message: string; targetTab: string }>) => void;
   setAdvancedPanelOpen: (panelId: string, open: boolean) => void;
   setScenariosFocus: (focus: 'none' | 'snapshots') => void;
@@ -164,6 +222,23 @@ interface MTFSStore {
   setPeerBenchmark: (updates: Partial<PeerBenchmarkConfig>) => void;
   resetToDefaults: () => void;
   applyPreset: (preset: 'optimistic' | 'pessimistic') => void;
+  lockBaseline: () => void;
+  unlockBaseline: () => void;
+  freezeAssumptionsForPack: (label: string) => void;
+  unfreezeAssumptions: () => void;
+  noteGovernanceExport: (kind: 'memberBrief' | 's151Pack' | 'dataCsv') => void;
+  setCurrentWorkingSet: (workingSet: MTFSStore['workflowState']['currentWorkingSet']) => void;
+  setSelectedDecisionOption: (option: MTFSStore['workflowState']['selectedDecisionOption']) => void;
+  runEndToEndValidation: () => { blockers: string[]; warnings: string[] };
+  createDefaultScenarioPack: () => void;
+  createScenarioFromGoal: (goal: ScenarioGoal) => void;
+  exportScenarioAuditCsv: () => string;
+  enterCfoDemoMode: () => void;
+  exitCfoDemoMode: () => void;
+  setCfoDemoStep: (step: CfoDemoStep) => void;
+  loadCfoDemoDataset: () => void;
+  resetCfoDemoState: () => void;
+  toggleCfoRehearsalItem: (id: string) => void;
 }
 
 const SCENARIO_COLORS = [
@@ -177,19 +252,20 @@ function makeYearProfile(value: number): YearProfile5 {
   return { y1: value, y2: value, y3: value, y4: value, y5: value };
 }
 
-function coerceYearProfile(value: unknown, fallback: YearProfile5): YearProfile5 {
+function coerceYearProfile(value: unknown, fallback: YearProfile5 | number): YearProfile5 {
+  const fallbackProfile = typeof fallback === 'number' ? makeYearProfile(fallback) : fallback;
   if (value && typeof value === 'object') {
     const src = value as Partial<YearProfile5>;
     return {
-      y1: Number.isFinite(Number(src.y1)) ? Number(src.y1) : fallback.y1,
-      y2: Number.isFinite(Number(src.y2)) ? Number(src.y2) : fallback.y2,
-      y3: Number.isFinite(Number(src.y3)) ? Number(src.y3) : fallback.y3,
-      y4: Number.isFinite(Number(src.y4)) ? Number(src.y4) : fallback.y4,
-      y5: Number.isFinite(Number(src.y5)) ? Number(src.y5) : fallback.y5,
+      y1: Number.isFinite(Number(src.y1)) ? Number(src.y1) : fallbackProfile.y1,
+      y2: Number.isFinite(Number(src.y2)) ? Number(src.y2) : fallbackProfile.y2,
+      y3: Number.isFinite(Number(src.y3)) ? Number(src.y3) : fallbackProfile.y3,
+      y4: Number.isFinite(Number(src.y4)) ? Number(src.y4) : fallbackProfile.y4,
+      y5: Number.isFinite(Number(src.y5)) ? Number(src.y5) : fallbackProfile.y5,
     };
   }
   if (Number.isFinite(Number(value))) return makeYearProfile(Number(value));
-  return fallback;
+  return fallbackProfile;
 }
 
 function incrementYearProfile(profile: YearProfile5 | number, delta: number): YearProfile5 {
@@ -348,8 +424,10 @@ function coerceSnapshotLike(input: unknown): ModelSnapshot | null {
   markIfScalar(rawPolicy, 'reservesUsage');
 
   const normalized = normalizeAssumptions(candidate.assumptions as Assumptions);
-  const zeroIfFlagged = (path: string, current: YearProfile5): YearProfile5 =>
-    requiresReview[path]?.requiresReview ? { y1: 0, y2: 0, y3: 0, y4: 0, y5: 0 } : current;
+  const zeroIfFlagged = (path: string, current: YearProfile5 | number): YearProfile5 =>
+    requiresReview[path]?.requiresReview
+      ? { y1: 0, y2: 0, y3: 0, y4: 0, y5: 0 }
+      : coerceYearProfile(current, 0);
 
   return {
     id: candidate.id || `snapshot-${Date.now()}`,
@@ -413,8 +491,16 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
   scenariosFocus: 'none',
   activeTab: 'summary',
   activeRole: 'finance',
+  rolePreset: 'head_of_finance',
   viewMode: 'technical',
   audienceMode: 'finance',
+  assumptionEditMode: 'quick_y1',
+  activeSectionAnchor: null,
+  saveState: 'saved',
+  meetingMode: false,
+  printPreviewMode: 'none',
+  rehearsalChecklist: defaultRehearsalChecklist(),
+  lastImportSnapshot: null,
   uiWarnings: [],
   advancedPanelsOpen: {
     baselineAdvanced: false,
@@ -424,14 +510,33 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
   densityMode: 'comfortable',
   snapshots: loadSnapshotsFromStorage(),
   peerBenchmark: DEFAULT_PEER_BENCHMARK,
+  cfoDemo: {
+    enabled: false,
+    step: 'position',
+    datasetLoaded: false,
+    rehearsal: {
+      dataset: false,
+      scenarios: false,
+      assurance: false,
+      export: false,
+      timing: false,
+    },
+  },
+  workflowState: {
+    baselineLocked: false,
+    assumptionsFrozen: false,
+    governanceExports: { memberBrief: 0, s151Pack: 0, dataCsv: 0 },
+  },
 
   setAssumptions: (a, description = 'Assumptions updated') =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const assumptions = normalizeAssumptions(a);
       const result = recompute(assumptions, s.baseline, s.savingsProposals);
       return {
         assumptions,
         result,
+        saveState: 'unsaved',
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, description)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, description)],
       };
@@ -439,6 +544,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateFunding: (key, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const existing = s.assumptions.funding[key];
       const nextValue = typeof existing === 'object' && existing !== null ? makeYearProfile(value) : value;
       const assumptions = { ...s.assumptions, funding: { ...s.assumptions.funding, [key]: nextValue } };
@@ -447,6 +553,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       return {
         assumptions,
         result,
+        saveState: 'unsaved',
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, desc)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)],
       };
@@ -454,6 +561,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateExpenditure: (key, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const existing = s.assumptions.expenditure[key];
       const nextValue = typeof existing === 'object' && existing !== null ? makeYearProfile(value) : value;
       const assumptions = { ...s.assumptions, expenditure: { ...s.assumptions.expenditure, [key]: nextValue } };
@@ -462,6 +570,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       return {
         assumptions,
         result,
+        saveState: 'unsaved',
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, desc)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)],
       };
@@ -469,6 +578,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updatePayAwardByFundingSource: (source, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const assumptions = {
         ...s.assumptions,
         expenditure: {
@@ -491,6 +601,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updatePayGroupSensitivity: (group, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const assumptions = {
         ...s.assumptions,
         expenditure: {
@@ -513,6 +624,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updatePolicy: (key, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const existing = s.assumptions.policy[key];
       const nextValue = (typeof existing === 'object' && existing !== null && typeof value === 'number') ? makeYearProfile(value) : value;
       const assumptions = { ...s.assumptions, policy: { ...s.assumptions.policy, [key]: nextValue as never } };
@@ -528,6 +640,7 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   updateAdvanced: (key, value, description) =>
     set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
       const assumptions = { ...s.assumptions, advanced: { ...s.assumptions.advanced, [key]: value } };
       const desc = description ?? `Advanced control updated: ${String(key)}`;
       const result = recompute(assumptions, s.baseline, s.savingsProposals);
@@ -541,12 +654,14 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   setBaseline: (b, description = 'Baseline replaced') =>
     set((s) => {
+      if (s.workflowState.baselineLocked || s.workflowState.assumptionsFrozen) return {};
       const result = recompute(s.assumptions, b, s.savingsProposals);
-      return { baseline: b, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, description)] };
+      return { baseline: b, result, saveState: 'unsaved', auditTrail: [...s.auditTrail, buildAuditEntry(result, description)] };
     }),
 
   updateBaselineField: (key, value, description) =>
     set((s) => {
+      if (s.workflowState.baselineLocked || s.workflowState.assumptionsFrozen) return {};
       const baseline = {
         ...s.baseline,
         [key]: value,
@@ -561,11 +676,12 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       };
       const desc = description ?? `Baseline field updated: ${String(key)}`;
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)] };
+      return { baseline, result, saveState: 'unsaved', auditTrail: [...s.auditTrail, buildAuditEntry(result, desc)] };
     }),
 
   importBaselinePartial: (partial, description = 'Baseline imported') =>
     set((s) => {
+      if (s.workflowState.baselineLocked || s.workflowState.assumptionsFrozen) return {};
       const baseline = {
         ...s.baseline,
         ...partial,
@@ -579,7 +695,20 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
           : {}),
       };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, description)] };
+      return {
+        baseline,
+        result,
+        saveState: 'unsaved',
+        lastImportSnapshot: {
+          label: description,
+          timestamp: new Date().toISOString(),
+          baseline: s.baseline,
+          assumptions: s.assumptions,
+          savingsProposals: s.savingsProposals,
+          scenarios: s.scenarios,
+        },
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, description)],
+      };
     }),
 
   updateCouncilTaxBaseConfig: (updates) =>
@@ -587,6 +716,13 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       const baseline = { ...s.baseline, councilTaxBaseConfig: { ...s.baseline.councilTaxBaseConfig, ...updates } };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Council tax base config updated')] };
+    }),
+
+  updateBusinessRatesConfig: (updates) =>
+    set((s) => {
+      const baseline = { ...s.baseline, businessRatesConfig: { ...s.baseline.businessRatesConfig, ...updates } };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Business rates config updated')] };
     }),
 
   addGrantScheduleEntry: (entry) =>
@@ -656,42 +792,67 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   addPaySpineRow: (row) =>
     set((s) => {
-      const baseline = { ...s.baseline, paySpineConfig: { ...s.baseline.paySpineConfig, rows: [...s.baseline.paySpineConfig.rows, row] } };
+      const post = legacyPaySpineRowToWorkforcePost(row);
+      const baseline = {
+        ...s.baseline,
+        workforceModel: {
+          ...s.baseline.workforceModel,
+          enabled: true,
+          mode: 'workforce_posts' as PayModelMode,
+          posts: [...s.baseline.workforceModel.posts, post],
+        },
+      };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Pay spine row added')] };
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Legacy pay spine row migrated to workforce post')] };
     }),
 
   updatePaySpineRow: (id, updates) =>
     set((s) => {
+      const postId = `wf-legacy-${id}`;
       const baseline = {
         ...s.baseline,
-        paySpineConfig: {
-          ...s.baseline.paySpineConfig,
-          rows: s.baseline.paySpineConfig.rows.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+        workforceModel: {
+          ...s.baseline.workforceModel,
+          enabled: true,
+          mode: 'workforce_posts' as PayModelMode,
+          posts: s.baseline.workforceModel.posts.map((post) => (post.id === postId ? {
+            ...post,
+            postId: updates.grade ?? post.postId,
+            service: updates.grade ? 'Legacy pay spine migration' : post.service,
+            fte: typeof updates.fte === 'number' ? updates.fte : post.fte,
+            annualCost: typeof updates.spinePointCost === 'number' ? updates.spinePointCost : post.annualCost,
+          } : post)),
         },
       };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Pay spine row updated')] };
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Legacy pay spine workforce post updated')] };
     }),
 
   removePaySpineRow: (id) =>
     set((s) => {
+      const postId = `wf-legacy-${id}`;
       const baseline = {
         ...s.baseline,
-        paySpineConfig: {
-          ...s.baseline.paySpineConfig,
-          rows: s.baseline.paySpineConfig.rows.filter((r) => r.id !== id),
-        },
+        workforceModel: { ...s.baseline.workforceModel, posts: s.baseline.workforceModel.posts.filter((post) => post.id !== postId) },
       };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Pay spine row removed')] };
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Legacy pay spine workforce post removed')] };
     }),
 
   setPaySpineEnabled: (enabled) =>
     set((s) => {
-      const baseline = { ...s.baseline, paySpineConfig: { ...s.baseline.paySpineConfig, enabled } };
+      const migrated = enabled ? migratePaySpineRowsToWorkforcePosts(s.baseline.paySpineConfig.rows, s.baseline.workforceModel.posts) : [];
+      const baseline = {
+        ...s.baseline,
+        workforceModel: {
+          ...s.baseline.workforceModel,
+          enabled: enabled || s.baseline.workforceModel.posts.length > 0,
+          mode: (enabled || s.baseline.workforceModel.posts.length > 0 ? 'workforce_posts' : 'baseline') as PayModelMode,
+          posts: [...s.baseline.workforceModel.posts, ...migrated],
+        },
+      };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Pay spine ${enabled ? 'enabled' : 'disabled'}`)] };
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Legacy pay spine ${enabled ? 'migrated' : 'left inactive'}`)] };
     }),
 
   setWorkforceModelEnabled: (enabled) =>
@@ -703,14 +864,15 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
 
   setWorkforceModelMode: (mode) =>
     set((s) => {
-      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, mode } };
+      const nextMode: PayModelMode = s.baseline.workforceModel.posts.length > 0 || mode === 'workforce_posts' ? 'workforce_posts' : 'baseline';
+      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, enabled: nextMode === 'workforce_posts', mode: nextMode } };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
-      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Workforce model mode set: ${mode}`)] };
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Workforce pay model set: ${nextMode}`)] };
     }),
 
   addWorkforcePost: (post) =>
     set((s) => {
-      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, posts: [...s.baseline.workforceModel.posts, post] } };
+      const baseline = { ...s.baseline, workforceModel: { ...s.baseline.workforceModel, enabled: true, mode: 'workforce_posts' as PayModelMode, posts: [...s.baseline.workforceModel.posts, post] } };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Workforce post added')] };
     }),
@@ -782,6 +944,19 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       const baseline = { ...s.baseline, contractIndexationTracker: { ...s.baseline.contractIndexationTracker, enabled } };
       const result = recompute(s.assumptions, baseline, s.savingsProposals);
       return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, `Contract tracker ${enabled ? 'enabled' : 'disabled'}`)] };
+    }),
+
+  updateContractIndexAssumptions: (updates) =>
+    set((s) => {
+      const baseline = {
+        ...s.baseline,
+        contractIndexationTracker: {
+          ...s.baseline.contractIndexationTracker,
+          indexAssumptions: { ...s.baseline.contractIndexationTracker.indexAssumptions, ...updates },
+        },
+      };
+      const result = recompute(s.assumptions, baseline, s.savingsProposals);
+      return { baseline, result, auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Contract index assumptions updated')] };
     }),
 
   addInvestToSaveProposal: (proposal) =>
@@ -1002,17 +1177,18 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         assumptions = { ...assumptions, funding: { ...assumptions.funding, grantVariation: incrementYearProfile(assumptions.funding.grantVariation, -3) } };
       }
       if (name === 'worst_case') {
+        const savingsDelivery = coerceYearProfile(assumptions.expenditure.savingsDeliveryRisk, DEFAULT_ASSUMPTIONS.expenditure.savingsDeliveryRisk);
         assumptions = {
           ...assumptions,
           expenditure: {
             ...assumptions.expenditure,
             nonPayInflation: incrementYearProfile(assumptions.expenditure.nonPayInflation, 3),
             savingsDeliveryRisk: {
-              y1: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y1 - 20),
-              y2: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y2 - 20),
-              y3: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y3 - 20),
-              y4: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y4 - 20),
-              y5: Math.max(30, assumptions.expenditure.savingsDeliveryRisk.y5 - 20),
+              y1: Math.max(30, savingsDelivery.y1 - 20),
+              y2: Math.max(30, savingsDelivery.y2 - 20),
+              y3: Math.max(30, savingsDelivery.y3 - 20),
+              y4: Math.max(30, savingsDelivery.y4 - 20),
+              y5: Math.max(30, savingsDelivery.y5 - 20),
             },
           },
           funding: {
@@ -1106,7 +1282,10 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
     }),
 
   setAuthorityConfig: (cfg) =>
-    set((s) => ({ authorityConfig: { ...s.authorityConfig, ...cfg } })),
+    set((s) => {
+      if (s.workflowState.assumptionsFrozen) return {};
+      return { authorityConfig: { ...s.authorityConfig, ...cfg } };
+    }),
 
   setModelRunDescription: (description) => set({ modelRunDescription: description }),
 
@@ -1129,9 +1308,55 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       result: { ...s.result },
       createdAt: new Date().toISOString(),
       color: SCENARIO_COLORS[colorIndex],
+      label: 'Draft',
+      owner: 'Head of Finance',
+      reviewDate: new Date().toISOString().slice(0, 10),
+      notes: {
+        rationale: description || 'Saved from current model assumptions.',
+        assumptions: 'Captured from current five-year assumption profiles.',
+        tradeOffs: 'Review affordability, risk and reserves before recommendation.',
+        risks: 'Delivery, funding and reserve risk should be checked before governance use.',
+        decisionRequired: 'Confirm whether this option should move forward.',
+      },
+      versionHistory: [{ timestamp: new Date().toISOString(), description: 'Scenario saved' }],
     };
     set((state) => ({ scenarios: [...state.scenarios, scenario] }));
   },
+  updateScenario: (id, updates, description = 'Scenario updated') =>
+    set((s) => ({
+      scenarios: s.scenarios.map((scenario) => {
+        if (scenario.id !== id) return scenario;
+        const assumptions = updates.assumptions ? normalizeAssumptions(updates.assumptions) : scenario.assumptions;
+        const result = updates.assumptions ? recompute(assumptions, s.baseline, s.savingsProposals) : scenario.result;
+        return {
+          ...scenario,
+          ...updates,
+          assumptions,
+          result,
+          versionHistory: [
+            ...(scenario.versionHistory ?? []),
+            { timestamp: new Date().toISOString(), description },
+          ],
+        };
+      }),
+    })),
+  cloneScenario: (id) =>
+    set((s) => {
+      const source = s.scenarios.find((scenario) => scenario.id === id);
+      if (!source) return {};
+      const cloned: Scenario = {
+        ...source,
+        id: `scenario-clone-${Date.now()}`,
+        name: resolveUniqueScenarioName(`${source.name} Copy`, s.scenarios),
+        label: 'Draft',
+        createdAt: new Date().toISOString(),
+        versionHistory: [
+          ...(source.versionHistory ?? []),
+          { timestamp: new Date().toISOString(), description: `Cloned from ${source.name}` },
+        ],
+      };
+      return { scenarios: [...s.scenarios, cloned] };
+    }),
 
   deleteScenario: (id) =>
     set((s) => ({
@@ -1151,6 +1376,11 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         activeScenarioId: id,
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, `Scenario loaded: ${scenario.name}`)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, `Scenario loaded: ${scenario.name}`)],
+        workflowState: {
+          ...s.workflowState,
+          currentWorkingSet: { kind: 'scenario', name: scenario.name, timestamp: new Date().toISOString() },
+        },
+        saveState: 'scenario_loaded',
       });
     }
   },
@@ -1168,9 +1398,60 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       risk: 'summary',
       help: 'governance',
     };
-    set({ activeTab: redirects[tab] ?? tab });
+    set({ activeTab: redirects[tab] ?? tab, printPreviewMode: 'none' });
   },
-  setActiveRole: (role) => set({ activeRole: role, audienceMode: role }),
+  setActiveRole: (role) => set({ activeRole: role, audienceMode: role, rolePreset: role === 'members' ? 'councillor' : 'head_of_finance', activeTab: role === 'members' ? 'summary' : 'summary', printPreviewMode: 'none', meetingMode: false }),
+  setRolePreset: (role) => {
+    const preset = ROLE_PRESETS[role];
+    set({
+      rolePreset: role,
+      activeRole: preset.audience === 'members' ? 'members' : 'finance',
+      audienceMode: preset.audience,
+      activeTab: preset.defaultTab,
+      densityMode: role === 'cfo' || role === 'councillor' ? 'presentation' : 'comfortable',
+      printPreviewMode: 'none',
+      meetingMode: false,
+    });
+  },
+  setAssumptionEditMode: (mode) => set({ assumptionEditMode: mode }),
+  setActiveSectionAnchor: (anchor) => {
+    set({ activeSectionAnchor: anchor });
+    if (typeof window !== 'undefined' && anchor) {
+      window.setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+    }
+  },
+  setSaveState: (state) => set({ saveState: state }),
+  setMeetingMode: (enabled) => set({ meetingMode: enabled, densityMode: enabled ? 'presentation' : 'comfortable' }),
+  setPrintPreviewMode: (mode) => set({ printPreviewMode: mode }),
+  toggleRehearsalChecklistItem: (id) =>
+    set((s) => ({ rehearsalChecklist: { ...s.rehearsalChecklist, [id]: !s.rehearsalChecklist[id] } })),
+  markRehearsalChecklistItem: (id, value) =>
+    set((s) => ({ rehearsalChecklist: { ...s.rehearsalChecklist, [id]: value } })),
+  resetWorkflowUiState: () =>
+    set({
+      activeTab: 'summary',
+      activeSectionAnchor: null,
+      saveState: 'saved',
+      meetingMode: false,
+      printPreviewMode: 'none',
+      rehearsalChecklist: defaultRehearsalChecklist(),
+      scenariosFocus: 'none',
+    }),
+  undoLastImport: () =>
+    set((s) => {
+      if (!s.lastImportSnapshot) return {};
+      const result = recompute(s.lastImportSnapshot.assumptions, s.lastImportSnapshot.baseline, s.lastImportSnapshot.savingsProposals);
+      return {
+        baseline: s.lastImportSnapshot.baseline,
+        assumptions: s.lastImportSnapshot.assumptions,
+        savingsProposals: s.lastImportSnapshot.savingsProposals,
+        scenarios: s.lastImportSnapshot.scenarios,
+        result,
+        saveState: 'unsaved',
+        lastImportSnapshot: null,
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, `Undo import: ${s.lastImportSnapshot.label}`)],
+      };
+    }),
   setUiWarnings: (warnings) => set({ uiWarnings: warnings }),
   setAdvancedPanelOpen: (panelId, open) =>
     set((s) => ({ advancedPanelsOpen: { ...s.advancedPanelsOpen, [panelId]: open } })),
@@ -1204,7 +1485,13 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       };
       const snapshots = [snapshot, ...s.snapshots];
       persistSnapshots(snapshots);
-      return { snapshots };
+      return {
+        snapshots,
+        workflowState: {
+          ...s.workflowState,
+          currentWorkingSet: { kind: 'snapshot', name, timestamp: snapshot.createdAt },
+        },
+      };
     }),
   loadSnapshot: (id) =>
     set((s) => {
@@ -1221,6 +1508,10 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         result,
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(assumptions, `Snapshot loaded: ${snapshot.name}`)],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, `Snapshot loaded: ${snapshot.name}`)],
+        workflowState: {
+          ...s.workflowState,
+          currentWorkingSet: { kind: 'snapshot', name: snapshot.name, timestamp: new Date().toISOString() },
+        },
       };
     }),
   deleteSnapshot: (id) =>
@@ -1284,6 +1575,11 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
         result,
         assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(DEFAULT_ASSUMPTIONS, 'Reset to defaults')],
         auditTrail: [...s.auditTrail, buildAuditEntry(result, 'Reset to defaults')],
+        workflowState: {
+          baselineLocked: false,
+          assumptionsFrozen: false,
+          governanceExports: { memberBrief: 0, s151Pack: 0, dataCsv: 0 },
+        },
       };
     }),
 
@@ -1337,4 +1633,148 @@ export const useMTFSStore = create<MTFSStore>((set, get) => ({
       auditTrail: [...s.auditTrail, buildAuditEntry(result, `Preset applied: ${preset}`)],
     });
   },
+  lockBaseline: () =>
+    set((s) => ({ workflowState: { ...s.workflowState, baselineLocked: true }, saveState: 'baseline_locked', rehearsalChecklist: { ...s.rehearsalChecklist, baselineLocked: true } })),
+  unlockBaseline: () =>
+    set((s) => ({ workflowState: { ...s.workflowState, baselineLocked: false } })),
+  freezeAssumptionsForPack: (label) =>
+    set((s) => ({ workflowState: { ...s.workflowState, assumptionsFrozen: true, frozenLabel: label }, saveState: 'pack_frozen', rehearsalChecklist: { ...s.rehearsalChecklist, packFrozen: true } })),
+  unfreezeAssumptions: () =>
+    set((s) => ({ workflowState: { ...s.workflowState, assumptionsFrozen: false, frozenLabel: undefined } })),
+  noteGovernanceExport: (kind) =>
+    set((s) => ({
+      workflowState: {
+        ...s.workflowState,
+        governanceExports: { ...s.workflowState.governanceExports, [kind]: s.workflowState.governanceExports[kind] + 1 },
+      },
+      rehearsalChecklist: { ...s.rehearsalChecklist, exportTested: true },
+    })),
+  setCurrentWorkingSet: (workingSet) =>
+    set((s) => ({ workflowState: { ...s.workflowState, currentWorkingSet: workingSet } })),
+  setSelectedDecisionOption: (option) =>
+    set((s) => ({ workflowState: { ...s.workflowState, selectedDecisionOption: option } })),
+  runEndToEndValidation: () => {
+    const s = get();
+    const summary = validateModel({
+      authorityConfig: s.authorityConfig,
+      baseline: s.baseline,
+      assumptions: s.assumptions,
+      result: s.result,
+      savingsProposals: s.savingsProposals,
+      scenarios: s.scenarios,
+      snapshots: s.snapshots,
+      workflowState: s.workflowState,
+    });
+    set((state) => ({
+      workflowState: {
+        ...state.workflowState,
+        lastValidation: { timestamp: new Date().toISOString(), blockers: summary.blockers, warnings: summary.warnings },
+      },
+      rehearsalChecklist: { ...state.rehearsalChecklist, validationRun: true },
+    }));
+    return { blockers: summary.blockers, warnings: summary.warnings };
+  },
+  createDefaultScenarioPack: () =>
+    set((s) => {
+      const baseAssumptions = normalizeAssumptions(s.assumptions);
+      const templates = buildScenarioTemplates(baseAssumptions, s.baseline, s.savingsProposals, s.result);
+      const templateNames = new Set(templates.map((scenario) => scenario.name.trim().toLowerCase()));
+      const deduped = s.scenarios.filter((sc) => !templateNames.has(sc.name.trim().toLowerCase()));
+      return { scenarios: [...deduped, ...templates], rehearsalChecklist: { ...s.rehearsalChecklist, scenariosReady: true } };
+    }),
+  createScenarioFromGoal: (goal) =>
+    set((s) => {
+      const scenario = buildScenarioFromGoal(goal, normalizeAssumptions(s.assumptions), s.baseline, s.savingsProposals, s.result);
+      return { scenarios: [...s.scenarios, { ...scenario, name: resolveUniqueScenarioName(scenario.name, s.scenarios) }] };
+    }),
+  exportScenarioAuditCsv: () => exportScenarioAuditCsv(get().scenarios, get().result),
+  enterCfoDemoMode: () =>
+    set((s) => ({
+      activeRole: 'finance',
+      activeTab: 'summary',
+      densityMode: 'presentation',
+      cfoDemo: {
+        ...s.cfoDemo,
+        enabled: true,
+        step: 'position',
+        startedAt: new Date().toISOString(),
+      },
+    })),
+  exitCfoDemoMode: () =>
+    set((s) => ({
+      densityMode: s.densityMode === 'presentation' ? 'comfortable' : s.densityMode,
+      cfoDemo: { ...s.cfoDemo, enabled: false },
+    })),
+  setCfoDemoStep: (step) =>
+    set((s) => ({
+      cfoDemo: { ...s.cfoDemo, step: CFO_DEMO_STEPS.includes(step) ? step : 'position' },
+    })),
+  loadCfoDemoDataset: () =>
+    set((s) => {
+      const demo = buildCfoDemoDataset();
+      const result = recompute(demo.assumptions, demo.baseline, demo.savingsProposals);
+      const snapshots = [demo.snapshot, ...s.snapshots.filter((snapshot) => snapshot.id !== demo.snapshot.id)];
+      persistSnapshots(snapshots);
+      return {
+        assumptions: demo.assumptions,
+        baseline: demo.baseline,
+        authorityConfig: demo.authorityConfig,
+        savingsProposals: demo.savingsProposals,
+        scenarios: demo.scenarios,
+        snapshots,
+        result,
+        activeRole: 'finance',
+        activeTab: 'summary',
+        densityMode: 'presentation',
+        assumptionHistory: [...s.assumptionHistory, buildAssumptionHistory(demo.assumptions, 'CFO demo dataset loaded')],
+        auditTrail: [...s.auditTrail, buildAuditEntry(result, 'CFO demo dataset loaded')],
+        workflowState: {
+          ...s.workflowState,
+          baselineLocked: true,
+          assumptionsFrozen: false,
+          currentWorkingSet: { kind: 'snapshot', name: demo.snapshot.name, timestamp: demo.snapshot.createdAt },
+          lastValidation: undefined,
+        },
+        cfoDemo: {
+          ...s.cfoDemo,
+          enabled: true,
+          step: 'position',
+          startedAt: new Date().toISOString(),
+          datasetLoaded: true,
+          rehearsal: { ...s.cfoDemo.rehearsal, dataset: true, scenarios: true },
+        },
+        rehearsalChecklist: {
+          ...s.rehearsalChecklist,
+          demoDataLoaded: true,
+          baselineLocked: true,
+          scenariosReady: true,
+        },
+      };
+    }),
+  resetCfoDemoState: () =>
+    set((s) => ({
+      cfoDemo: {
+        ...s.cfoDemo,
+        enabled: true,
+        step: 'position',
+        startedAt: new Date().toISOString(),
+        rehearsal: {
+          dataset: s.cfoDemo.datasetLoaded,
+          scenarios: s.scenarios.length >= 3,
+          assurance: false,
+          export: false,
+          timing: false,
+        },
+      },
+      activeTab: 'summary',
+      activeRole: 'finance',
+      densityMode: 'presentation',
+    })),
+  toggleCfoRehearsalItem: (id) =>
+    set((s) => ({
+      cfoDemo: {
+        ...s.cfoDemo,
+        rehearsal: { ...s.cfoDemo.rehearsal, [id]: !s.cfoDemo.rehearsal[id] },
+      },
+    })),
 }));

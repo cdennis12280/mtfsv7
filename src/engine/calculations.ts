@@ -9,11 +9,13 @@ import type {
   CustomServiceLine,
   SavingsProposal,
   NamedReserve,
+  ReserveCategory,
   CustomLineYearResult,
   NamedReserveYearResult,
   SavingsProposalYearResult,
   MonteCarloSummary,
 } from '../types/financial';
+import { migratePaySpineRowsToWorkforcePosts } from '../utils/workforcePay';
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,19 @@ export const DEFAULT_BASELINE: BaselineData = {
     parishPrecepts: 0,
     corePreceptPct: 2.99,
     ascPreceptPct: 2.0,
+    collectionFundSurplusDeficit: 0,
+  },
+  businessRatesConfig: {
+    enabled: false,
+    baselineRates: 92_000,
+    growthRate: { y1: 2, y2: 2, y3: 2, y4: 2, y5: 2 },
+    appealsProvision: 0,
+    tariffTopUp: 0,
+    levySafetyNet: 0,
+    poolingGain: 0,
+    collectionFundAdjustment: 0,
+    resetAdjustment: 0,
+    resetYear: 3,
   },
   grantSchedule: [],
   ascCohortModel: {
@@ -82,11 +97,18 @@ export const DEFAULT_BASELINE: BaselineData = {
   },
   workforceModel: {
     enabled: false,
-    mode: 'pay_spine',
+    mode: 'baseline',
     posts: [],
   },
   contractIndexationTracker: {
     enabled: false,
+    indexAssumptions: {
+      cpi: { y1: 3, y2: 3, y3: 3, y4: 3, y5: 3 },
+      rpi: { y1: 4, y2: 4, y3: 4, y4: 4, y5: 4 },
+      nmw: { y1: 6, y2: 5, y3: 4, y4: 4, y5: 4 },
+      fixed: { y1: 3, y2: 3, y3: 3, y4: 3, y5: 3 },
+      bespoke: { y1: 3, y2: 3, y3: 3, y4: 3, y5: 3 },
+    },
     contracts: [],
   },
   investToSave: {
@@ -120,6 +142,113 @@ export const DEFAULT_BASELINE: BaselineData = {
     annuityRate: 3.5,
   },
 };
+
+function profileOrDefault(value: YearProfile5 | number | undefined, fallback: YearProfile5): YearProfile5 {
+  if (typeof value === 'number') return { y1: value, y2: value, y3: value, y4: value, y5: value };
+  if (!value) return { ...fallback };
+  return {
+    y1: Number.isFinite(value.y1) ? value.y1 : fallback.y1,
+    y2: Number.isFinite(value.y2) ? value.y2 : fallback.y2,
+    y3: Number.isFinite(value.y3) ? value.y3 : fallback.y3,
+    y4: Number.isFinite(value.y4) ? value.y4 : fallback.y4,
+    y5: Number.isFinite(value.y5) ? value.y5 : fallback.y5,
+  };
+}
+
+export function normalizeBaseline(baselineInput: BaselineData | Partial<BaselineData> | undefined | null): BaselineData {
+  const source = (baselineInput ?? {}) as Partial<BaselineData>;
+  const businessRatesConfig = source.businessRatesConfig ?? DEFAULT_BASELINE.businessRatesConfig;
+  const contractTracker = source.contractIndexationTracker ?? DEFAULT_BASELINE.contractIndexationTracker;
+  const legacyPayPosts = migratePaySpineRowsToWorkforcePosts(source.paySpineConfig?.rows, source.workforceModel?.posts ?? []);
+  const workforcePosts = [...(source.workforceModel?.posts ?? []), ...legacyPayPosts];
+
+  return {
+    ...DEFAULT_BASELINE,
+    ...source,
+    customServiceLines: source.customServiceLines ?? [],
+    namedReserves: (source.namedReserves ?? []).map((reserve) => {
+      const category = reserveCategoryOf(reserve);
+      return { ...reserve, category, isEarmarked: category !== 'general_fund' };
+    }),
+    grantSchedule: source.grantSchedule ?? [],
+    growthProposals: source.growthProposals ?? [],
+    manualAdjustments: source.manualAdjustments ?? [],
+    importMappingProfiles: source.importMappingProfiles ?? [],
+    overlayImports: source.overlayImports ?? [],
+    councilTaxBaseConfig: {
+      ...DEFAULT_BASELINE.councilTaxBaseConfig,
+      ...(source.councilTaxBaseConfig ?? {}),
+    },
+    businessRatesConfig: {
+      ...DEFAULT_BASELINE.businessRatesConfig,
+      ...businessRatesConfig,
+      growthRate: profileOrDefault(businessRatesConfig.growthRate, DEFAULT_BASELINE.businessRatesConfig.growthRate),
+    },
+    ascCohortModel: {
+      ...DEFAULT_BASELINE.ascCohortModel,
+      ...(source.ascCohortModel ?? {}),
+    },
+    capitalFinancing: {
+      ...DEFAULT_BASELINE.capitalFinancing,
+      ...(source.capitalFinancing ?? {}),
+      borrowingByYear: source.capitalFinancing?.borrowingByYear ?? [...DEFAULT_BASELINE.capitalFinancing.borrowingByYear],
+    },
+    riskBasedReserves: {
+      ...DEFAULT_BASELINE.riskBasedReserves,
+      ...(source.riskBasedReserves ?? {}),
+    },
+    reservesRecoveryPlan: {
+      ...DEFAULT_BASELINE.reservesRecoveryPlan,
+      ...(source.reservesRecoveryPlan ?? {}),
+    },
+    paySpineConfig: {
+      ...DEFAULT_BASELINE.paySpineConfig,
+      ...(source.paySpineConfig ?? {}),
+      rows: source.paySpineConfig?.rows ?? [],
+    },
+    workforceModel: {
+      ...DEFAULT_BASELINE.workforceModel,
+      ...(source.workforceModel ?? {}),
+      enabled: workforcePosts.length > 0,
+      mode: workforcePosts.length > 0 ? 'workforce_posts' : 'baseline',
+      posts: workforcePosts,
+    },
+    contractIndexationTracker: {
+      ...DEFAULT_BASELINE.contractIndexationTracker,
+      ...contractTracker,
+      indexAssumptions: {
+        cpi: profileOrDefault(contractTracker.indexAssumptions?.cpi, DEFAULT_BASELINE.contractIndexationTracker.indexAssumptions.cpi),
+        rpi: profileOrDefault(contractTracker.indexAssumptions?.rpi, DEFAULT_BASELINE.contractIndexationTracker.indexAssumptions.rpi),
+        nmw: profileOrDefault(contractTracker.indexAssumptions?.nmw, DEFAULT_BASELINE.contractIndexationTracker.indexAssumptions.nmw),
+        fixed: profileOrDefault(contractTracker.indexAssumptions?.fixed, DEFAULT_BASELINE.contractIndexationTracker.indexAssumptions.fixed),
+        bespoke: profileOrDefault(contractTracker.indexAssumptions?.bespoke, DEFAULT_BASELINE.contractIndexationTracker.indexAssumptions.bespoke),
+      },
+      contracts: contractTracker.contracts ?? [],
+    },
+    investToSave: {
+      ...DEFAULT_BASELINE.investToSave,
+      ...(source.investToSave ?? {}),
+      proposals: source.investToSave?.proposals ?? [],
+    },
+    incomeGenerationWorkbook: {
+      ...DEFAULT_BASELINE.incomeGenerationWorkbook,
+      ...(source.incomeGenerationWorkbook ?? {}),
+      lines: source.incomeGenerationWorkbook?.lines ?? [],
+    },
+    reservesAdequacyMethodology: {
+      ...DEFAULT_BASELINE.reservesAdequacyMethodology,
+      ...(source.reservesAdequacyMethodology ?? {}),
+    },
+    treasuryIndicators: {
+      ...DEFAULT_BASELINE.treasuryIndicators,
+      ...(source.treasuryIndicators ?? {}),
+    },
+    mrpCalculator: {
+      ...DEFAULT_BASELINE.mrpCalculator,
+      ...(source.mrpCalculator ?? {}),
+    },
+  };
+}
 
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
   funding: {
@@ -172,31 +301,31 @@ export const DEFAULT_AUTHORITY_CONFIG = {
 };
 
 const YEARS = 5;
+const EMPTY_SOURCE_TOTALS = { general_fund: 0, grant: 0, other: 0 };
+const EMPTY_GROUP_TOTALS = { default: 0, teachers: 0, njc: 0, senior: 0, other: 0 };
 
-function toNumberSafe(value: unknown, fallback = 0): number {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
+function reserveCategoryOf(reserve: Pick<NamedReserve, 'category' | 'isEarmarked'>): ReserveCategory {
+  return reserve.category ?? (reserve.isEarmarked ? 'service_specific' : 'general_fund');
 }
 
-function coerceYearProfile(value: unknown, fallback: YearProfile5): YearProfile5 {
-  if (value && typeof value === 'object') {
-    const v = value as Partial<YearProfile5>;
-    return {
-      y1: toNumberSafe(v.y1, fallback.y1),
-      y2: toNumberSafe(v.y2, fallback.y2),
-      y3: toNumberSafe(v.y3, fallback.y3),
-      y4: toNumberSafe(v.y4, fallback.y4),
-      y5: toNumberSafe(v.y5, fallback.y5),
-    };
-  }
-  const scalar = toNumberSafe(value, 0);
-  return { y1: scalar, y2: scalar, y3: scalar, y4: scalar, y5: scalar };
+function reserveTotalsByCategory(results: NamedReserveYearResult[]): Record<ReserveCategory, number> {
+  return results.reduce<Record<ReserveCategory, number>>((acc, reserve) => {
+    acc[reserve.category] += reserve.closingBalance;
+    return acc;
+  }, { general_fund: 0, service_specific: 0, ringfenced: 0, technical: 0 });
 }
 
 function yearValue(profile: YearProfile5 | number, year: number): number {
   if (typeof profile === 'number') return profile;
   const y = Math.max(1, Math.min(5, year));
   return profile[`y${y}` as keyof YearProfile5];
+}
+
+function normalizeYearProfile(profile: YearProfile5 | number): YearProfile5 {
+  if (typeof profile === 'number') {
+    return { y1: profile, y2: profile, y3: profile, y4: profile, y5: profile };
+  }
+  return profile;
 }
 
 function compoundFactor(profile: YearProfile5 | number, year: number): number {
@@ -393,12 +522,13 @@ function runNamedReservesYear(
 
   for (const r of reserves) {
     const opening = openingBalances.get(r.id) ?? r.openingBalance;
+    const category = reserveCategoryOf(r);
     const contribution = r.plannedContributions[year - 1] ?? 0;
     const drawdown = Math.min(r.plannedDrawdowns[year - 1] ?? 0, opening + contribution);
     const closing = Math.max(0, opening + contribution - drawdown);
     closingBalances.set(r.id, closing);
-    results.push({ id: r.id, name: r.name, openingBalance: opening, contribution, drawdown, closingBalance: closing, isEarmarked: r.isEarmarked });
-    if (r.isEarmarked) {
+    results.push({ id: r.id, name: r.name, category, openingBalance: opening, contribution, drawdown, closingBalance: closing, isEarmarked: category !== 'general_fund' });
+    if (category !== 'general_fund') {
       totalEM += closing;
     } else {
       totalGF += closing;
@@ -462,29 +592,19 @@ function computeRecommendedMinimumReserves(baseline: BaselineData): number {
   return cfg.demandVolatility + cfg.savingsNonDelivery + cfg.fundingUncertainty + cfg.litigationRisk;
 }
 
-function resolveContractRate(
-  clause: 'cpi' | 'rpi' | 'nmw' | 'bespoke',
-  assumptions: Assumptions,
-  bespokeRate: number,
-  year: number
-): number {
-  if (clause === 'bespoke') return bespokeRate;
-  if (clause === 'nmw') return yearValue(assumptions.expenditure.payAward, year);
-  if (clause === 'rpi') return yearValue(assumptions.expenditure.nonPayInflation, year) + 1;
-  return yearValue(assumptions.expenditure.nonPayInflation, year);
-}
-
 function resolveContractUpliftRate(
   method: 'cpi' | 'rpi' | 'fixed' | 'custom',
   assumptions: Assumptions,
+  baseline: BaselineData,
   fixedRate: number,
   customRate: number,
   year: number
 ): number {
-  if (method === 'fixed') return fixedRate;
-  if (method === 'custom') return customRate;
-  if (method === 'rpi') return yearValue(assumptions.expenditure.nonPayInflation, year) + 1;
-  return yearValue(assumptions.expenditure.nonPayInflation, year);
+  const table = baseline.contractIndexationTracker.indexAssumptions;
+  if (method === 'fixed') return Number.isFinite(fixedRate) ? fixedRate : yearValue(table.fixed, year);
+  if (method === 'custom') return Number.isFinite(customRate) ? customRate : yearValue(table.bespoke, year);
+  if (method === 'rpi') return yearValue(table.rpi, year);
+  return table?.cpi ? yearValue(table.cpi, year) : yearValue(assumptions.expenditure.nonPayInflation, year);
 }
 
 function resolveContractEffectiveFactor(
@@ -576,13 +696,95 @@ function computeS114Assessment(
   return { triggered: reasons.length > 0, reasons };
 }
 
+function postSplit(post: { fundingSource: keyof typeof EMPTY_SOURCE_TOTALS; generalFundSplit?: number; grantFundSplit?: number; otherSplit?: number }) {
+  const splitFallback = post.fundingSource === 'grant'
+    ? { general_fund: 0, grant: 100, other: 0 }
+    : post.fundingSource === 'other'
+      ? { general_fund: 0, grant: 0, other: 100 }
+      : { general_fund: 100, grant: 0, other: 0 };
+  const generalFund = Math.max(0, Math.min(100, post.generalFundSplit ?? splitFallback.general_fund));
+  const grant = Math.max(0, Math.min(100, post.grantFundSplit ?? splitFallback.grant));
+  const other = Math.max(0, Math.min(100, post.otherSplit ?? Math.max(0, 100 - generalFund - grant)));
+  const total = Math.max(1, generalFund + grant + other);
+  return {
+    general_fund: generalFund / total,
+    grant: grant / total,
+    other: other / total,
+    totalPct: generalFund + grant + other,
+  };
+}
+
+function computePayModelForYear(
+  baseline: BaselineData,
+  assumptions: Assumptions,
+  year: number,
+  deflator: number
+) {
+  const activeWorkforce = baseline.workforceModel.posts.length > 0;
+  const workforceBase = activeWorkforce
+    ? baseline.workforceModel.posts.reduce((sum, post) => sum + ((post.fte * post.annualCost * (1 - Math.max(0, Math.min(100, post.vacancyFactor ?? 0)) / 100)) / 1000), 0) * deflator
+    : 0;
+
+  const baseBySource = { ...EMPTY_SOURCE_TOTALS };
+  const pressureBySource = { ...EMPTY_SOURCE_TOTALS };
+  const pressureByGroup = { ...EMPTY_GROUP_TOTALS };
+
+  if (activeWorkforce) {
+    for (const post of baseline.workforceModel.posts) {
+      const split = postSplit(post);
+      const base = ((post.fte * post.annualCost * (1 - Math.max(0, Math.min(100, post.vacancyFactor ?? 0)) / 100)) / 1000) * deflator;
+      const groupAdj = assumptions.expenditure.payGroupSensitivity[post.payAssumptionGroup] ?? 0;
+      const generalRate = assumptions.expenditure.payAwardByFundingSource.general_fund + groupAdj;
+      const grantRate = assumptions.expenditure.payAwardByFundingSource.grant + groupAdj;
+      const otherRate = assumptions.expenditure.payAwardByFundingSource.other + groupAdj;
+      const generalBase = base * split.general_fund;
+      const grantBase = base * split.grant;
+      const otherBase = base * split.other;
+      const generalPressure = generalBase * (Math.pow(1 + generalRate / 100, year) - 1);
+      const grantPressure = grantBase * (Math.pow(1 + grantRate / 100, year) - 1);
+      const otherPressure = otherBase * (Math.pow(1 + otherRate / 100, year) - 1);
+
+      baseBySource.general_fund += generalBase;
+      baseBySource.grant += grantBase;
+      baseBySource.other += otherBase;
+      pressureBySource.general_fund += generalPressure;
+      pressureBySource.grant += grantPressure;
+      pressureBySource.other += otherPressure;
+      pressureByGroup[post.payAssumptionGroup] += generalPressure + grantPressure + otherPressure;
+    }
+  }
+
+  const importedPayBudget = workforceBase;
+  const fallbackPayBase = baseline.pay * deflator;
+  const fallbackPayPressure = fallbackPayBase * (compoundFactor(assumptions.expenditure.payAward, year) - 1);
+  const usesImportedBase = importedPayBudget > 0;
+  const payBase = usesImportedBase ? importedPayBudget : fallbackPayBase;
+  if (!usesImportedBase) {
+    baseBySource.general_fund = fallbackPayBase;
+    pressureBySource.general_fund = fallbackPayPressure;
+    pressureBySource.grant = 0;
+    pressureBySource.other = 0;
+    pressureByGroup.default = fallbackPayPressure;
+  }
+
+  return {
+    payBase,
+    importedPayBudget,
+    activeModelMode: usesImportedBase ? 'workforce_posts' as const : 'baseline' as const,
+    baseBySource,
+    pressureBySource,
+    pressureByGroup,
+  };
+}
+
 // ─── Main calculation engine ──────────────────────────────────────────────────
 
 export function runCalculations(
   assumptions: Assumptions,
-  baseline: BaselineData,
+  baselineInput: BaselineData,
   savingsProposals: SavingsProposal[] = []
 ): MTFSResult {
+  const baseline = normalizeBaseline(baselineInput);
   const results: YearResult[] = [];
   const useNamedReserves = baseline.namedReserves.length > 0;
   const useSavingsProgramme = savingsProposals.length > 0;
@@ -643,11 +845,22 @@ export function runCalculations(
       : yearValue(ctGrowthProfile, y);
 
     const councilTaxBaseYield = taxCfg.enabled
-      ? ((taxCfg.bandDEquivalentDwellings * taxCfg.bandDCharge * (taxCfg.collectionRate / 100)) / 1000) + taxCfg.parishPrecepts
+      ? ((taxCfg.bandDEquivalentDwellings * taxCfg.bandDCharge * (taxCfg.collectionRate / 100)) / 1000) + taxCfg.parishPrecepts + (taxCfg.collectionFundSurplusDeficit ?? 0)
       : baseline.councilTax;
     const councilTax = councilTaxBaseYield * (taxCfg.enabled ? Math.pow(1 + ctIncreasePct / 100, y) : compoundFactor(ctGrowthProfile, y)) * deflator(y);
 
-    const businessRates = baseline.businessRates * compoundFactor(brGrowthProfile, y) * deflator(y);
+    const brCfg = baseline.businessRatesConfig;
+    const businessRates = brCfg.enabled
+      ? (
+        (brCfg.baselineRates || baseline.businessRates) * compoundFactor(brCfg.growthRate, y)
+        - (brCfg.appealsProvision ?? 0)
+        + (brCfg.tariffTopUp ?? 0)
+        + (brCfg.levySafetyNet ?? 0)
+        + (brCfg.poolingGain ?? 0)
+        + (brCfg.collectionFundAdjustment ?? 0)
+        + (y >= (brCfg.resetYear ?? 3) ? (brCfg.resetAdjustment ?? 0) : 0)
+      ) * deflator(y)
+      : baseline.businessRates * compoundFactor(brGrowthProfile, y) * deflator(y);
     const incomeGenerationIncome = baseline.incomeGenerationWorkbook.enabled
       ? baseline.incomeGenerationWorkbook.lines.reduce((sum, line) => {
         const volume = line.baseVolume * Math.pow(1 + line.volumeGrowth / 100, y);
@@ -661,52 +874,22 @@ export function runCalculations(
     let coreGrants = baseCoreGrants;
     if (baseline.grantSchedule.length > 0) {
       const scheduledGrants = baseline.grantSchedule.reduce((sum, grant) => {
-        if (grant.endYear < y) return sum;
+        if (grant.endYear < y) return sum + (grant.value * ((grant.replacementAssumption ?? 0) / 100) * grantCertaintyFactor(grant.certainty));
         if (grant.endYear === y && y < YEARS) grantsExpiringInYears.add(label);
-        return sum + (grant.value * grantCertaintyFactor(grant.certainty));
+        const linkedValue = grant.inflationLinked ? grant.value * compoundFactor(grantProfile, Math.max(0, y - 1)) : grant.value;
+        return sum + (linkedValue * grantCertaintyFactor(grant.certainty));
       }, 0);
-      const scheduledGrantsWithVariation = scheduledGrants * compoundFactor(grantProfile, Math.max(0, y - 1)) * deflator(y);
+      const scheduledGrantsWithVariation = scheduledGrants * deflator(y);
       // Grant schedule entries are treated as additional grant lines layered over the core-grants baseline.
       coreGrants = baseCoreGrants + scheduledGrantsWithVariation;
     }
     const totalFunding = councilTax + businessRates + coreGrants + feesAndCharges;
 
-    const payFromSpine =
-      baseline.paySpineConfig.enabled
-        ? baseline.paySpineConfig.rows.reduce((sum, row) => sum + ((row.fte * row.spinePointCost) / 1000), 0) * deflator(y)
-        : 0;
-    const payFromWorkforce =
-      baseline.workforceModel.enabled
-        ? baseline.workforceModel.posts.reduce((sum, post) => sum + ((post.fte * post.annualCost) / 1000), 0) * deflator(y)
-        : 0;
-    const payBase =
-      baseline.workforceModel.mode === 'hybrid'
-        ? payFromSpine + payFromWorkforce
-        : baseline.workforceModel.mode === 'workforce_posts'
-          ? (payFromWorkforce || baseline.pay * deflator(y))
-          : (payFromSpine || baseline.pay * deflator(y));
-
-    const workforcePayPressureBySource = baseline.workforceModel.enabled
-      ? baseline.workforceModel.posts.reduce((acc, post) => {
-        const base = ((post.fte * post.annualCost) / 1000) * deflator(y);
-        const sourceRate = assumptions.expenditure.payAwardByFundingSource[post.fundingSource];
-        const groupAdj = assumptions.expenditure.payGroupSensitivity[post.payAssumptionGroup] ?? 0;
-        const effectiveRate = sourceRate + groupAdj;
-        acc[post.fundingSource] += base * (Math.pow(1 + effectiveRate / 100, y) - 1);
-        return acc;
-      }, { general_fund: 0, grant: 0, other: 0 })
-      : { general_fund: 0, grant: 0, other: 0 };
-    const fallbackPayPressure = payBase * (compoundFactor(payProfile, y) - 1);
-    const generalFundPayPressure = baseline.workforceModel.enabled
-      ? workforcePayPressureBySource.general_fund
-      : fallbackPayPressure;
-    const grantFundedPayPressure = baseline.workforceModel.enabled
-      ? workforcePayPressureBySource.grant
-      : 0;
-    const otherFundedPayPressure = baseline.workforceModel.enabled
-      ? workforcePayPressureBySource.other
-      : 0;
-    const generalFundPayPressureResolved = baseline.workforceModel.enabled ? generalFundPayPressure : fallbackPayPressure;
+    const payModel = computePayModelForYear(baseline, assumptions, y, deflator(y));
+    const payBase = payModel.payBase;
+    const generalFundPayPressureResolved = payModel.pressureBySource.general_fund;
+    const grantFundedPayPressure = payModel.pressureBySource.grant;
+    const otherFundedPayPressure = payModel.pressureBySource.other;
     const payInflationImpact = generalFundPayPressureResolved + grantFundedPayPressure + otherFundedPayPressure;
     const nonPayBase = baseline.nonPay * deflator(y);
     const nonPayInflationImpact = nonPayBase * (compoundFactor(nonPayProfile, y) - 1);
@@ -726,9 +909,12 @@ export function runCalculations(
     const contractIndexationCost = baseline.contractIndexationTracker.enabled
       ? baseline.contractIndexationTracker.contracts.reduce((sum, c) => {
         const upliftMethod = c.upliftMethod ?? (c.clause === 'bespoke' ? 'custom' : c.clause === 'nmw' ? 'fixed' : c.clause);
-        const rate = resolveContractUpliftRate(upliftMethod, assumptions, c.fixedRate ?? yearValue(payProfile, y), c.customRate ?? c.bespokeRate, y);
-        const effectiveFactor = resolveContractEffectiveFactor(y, c.effectiveFromYear ?? 1, c.reviewMonth ?? 4, c.phaseInMonths ?? 0);
-        const upliftCost = c.value * (Math.pow(1 + rate / 100, y) - 1) * effectiveFactor;
+        const rateRaw = resolveContractUpliftRate(upliftMethod, assumptions, baseline, c.fixedRate ?? yearValue(payProfile, y), c.customRate ?? c.bespokeRate, y);
+        const rate = Math.max(c.collarRate ?? -100, Math.min(c.capRate ?? 100, rateRaw));
+        const effectiveYear = c.nextUpliftYear ?? c.effectiveFromYear ?? 1;
+        const effectiveFactor = resolveContractEffectiveFactor(y, effectiveYear, c.reviewMonth ?? 4, c.phaseInMonths ?? 0);
+        const upliftPeriods = Math.max(0, y - effectiveYear + 1);
+        const upliftCost = c.value * (Math.pow(1 + rate / 100, upliftPeriods) - 1) * effectiveFactor;
         contractBreakdown.push({
           contractId: c.id,
           name: c.name,
@@ -736,6 +922,10 @@ export function runCalculations(
           method: upliftMethod,
           effectiveFactor,
           upliftCost,
+          appliedRate: rate,
+          supplier: c.supplier,
+          service: c.service,
+          fundingSource: c.fundingSource,
         });
         return sum + upliftCost;
       }, 0) * deflator(y)
@@ -828,8 +1018,8 @@ export function runCalculations(
     // Planned reserves use is an explicit annual mitigation amount.
     // 0 means no planned reserves drawdown.
     const plannedReservesUse = Math.max(0, yearValue(reservesUsageProfile, y));
-    const reservesDrawdown = rawGap > 0 ? Math.min(rawGap, plannedReservesUse) : 0;
-    const netGap = rawGap - reservesDrawdown;
+    let reservesDrawdown = rawGap > 0 ? Math.min(rawGap, plannedReservesUse) : 0;
+    let netGap = rawGap - reservesDrawdown;
     cumulativeGap += rawGap;
 
     const gfOpening = gfBalance;
@@ -844,7 +1034,7 @@ export function runCalculations(
       namedBalances = nr.closingBalances;
 
       if (reservesRebuildContribution > 0 && nr.results.length > 0) {
-        const targetReserve = nr.results.find((r) => !r.isEarmarked) ?? nr.results[0];
+        const targetReserve = nr.results.find((r) => r.category === 'general_fund') ?? nr.results[0];
         targetReserve.closingBalance += reservesRebuildContribution;
         targetReserve.contribution += reservesRebuildContribution;
         namedBalances.set(targetReserve.id, targetReserve.closingBalance);
@@ -852,26 +1042,22 @@ export function runCalculations(
 
       if (reservesDrawdown > 0) {
         let remaining = reservesDrawdown;
+        let actualPolicyDrawdown = 0;
         for (const res of nr.results) {
-          if (!res.isEarmarked && remaining > 0) {
+          if (res.category === 'general_fund' && remaining > 0) {
             const take = Math.min(res.closingBalance, remaining);
             res.closingBalance -= take;
             namedBalances.set(res.id, res.closingBalance);
             remaining -= take;
+            actualPolicyDrawdown += take;
           }
         }
-        for (const res of nr.results) {
-          if (res.isEarmarked && remaining > 0) {
-            const take = Math.min(res.closingBalance, remaining);
-            res.closingBalance -= take;
-            namedBalances.set(res.id, res.closingBalance);
-            remaining -= take;
-          }
-        }
+        reservesDrawdown = actualPolicyDrawdown;
+        netGap = rawGap - reservesDrawdown;
       }
 
-      gfClose = nr.results.filter((r) => !r.isEarmarked).reduce((s, r) => s + r.closingBalance, 0);
-      emClose = nr.results.filter((r) => r.isEarmarked).reduce((s, r) => s + r.closingBalance, 0);
+      gfClose = nr.results.filter((r) => r.category === 'general_fund').reduce((s, r) => s + r.closingBalance, 0);
+      emClose = nr.results.filter((r) => r.category !== 'general_fund').reduce((s, r) => s + r.closingBalance, 0);
     } else {
       gfBalance += reservesRebuildContribution;
       const drawFromGF = Math.min(reservesDrawdown * 0.7, gfBalance);
@@ -886,6 +1072,9 @@ export function runCalculations(
       ? namedReserveResults.reduce((s, r) => s + r.openingBalance, 0)
       : gfOpening + emOpening;
     const totalClosingReserves = gfClose + emClose;
+    const reserveCategoryClosingBalances = useNamedReserves
+      ? reserveTotalsByCategory(namedReserveResults)
+      : { general_fund: gfClose, service_specific: emClose, ringfenced: 0, technical: 0 };
     const reservesBelowThreshold = totalClosingReserves < effectiveMinimumReservesThreshold;
     const reservesExhausted = totalClosingReserves <= 0;
     if (reservesExhausted && !yearReservesExhausted) yearReservesExhausted = label;
@@ -907,6 +1096,15 @@ export function runCalculations(
       generalFundPayPressure: generalFundPayPressureResolved,
       grantFundedPayPressure,
       otherFundedPayPressure,
+      payBudgetReconciliation: {
+        importedPayBudget: payModel.importedPayBudget,
+        baselinePay: baseline.pay,
+        variance: payModel.importedPayBudget - baseline.pay,
+        activeModelMode: payModel.activeModelMode,
+        generalFundBase: payModel.baseBySource.general_fund,
+        grantFundedBase: payModel.baseBySource.grant,
+        otherFundedBase: payModel.baseBySource.other,
+      },
       nonPayBase,
       nonPayInflationImpact,
       ascPressure,
@@ -935,6 +1133,7 @@ export function runCalculations(
       namedReserveResults,
       generalFundOpeningBalance: useNamedReserves ? 0 : gfOpening,
       earmarkedOpeningBalance: useNamedReserves ? 0 : emOpening,
+      reserveCategoryClosingBalances,
       totalOpeningReserves,
       generalFundClosingBalance: gfClose,
       earmarkedClosingBalance: emClose,
@@ -1296,13 +1495,16 @@ export function computeMonteCarlo(
   let s114Count = 0;
 
   for (let i = 0; i < safeIterations; i += 1) {
-    const sampleProfile = (profile: YearProfile5, stdDev: number, min: number, max: number): YearProfile5 => ({
-      y1: clamp(profile.y1 + gaussian(0, stdDev), min, max),
-      y2: clamp(profile.y2 + gaussian(0, stdDev), min, max),
-      y3: clamp(profile.y3 + gaussian(0, stdDev), min, max),
-      y4: clamp(profile.y4 + gaussian(0, stdDev), min, max),
-      y5: clamp(profile.y5 + gaussian(0, stdDev), min, max),
-    });
+    const sampleProfile = (profileInput: YearProfile5 | number, stdDev: number, min: number, max: number): YearProfile5 => {
+      const profile = normalizeYearProfile(profileInput);
+      return {
+        y1: clamp(profile.y1 + gaussian(0, stdDev), min, max),
+        y2: clamp(profile.y2 + gaussian(0, stdDev), min, max),
+        y3: clamp(profile.y3 + gaussian(0, stdDev), min, max),
+        y4: clamp(profile.y4 + gaussian(0, stdDev), min, max),
+        y5: clamp(profile.y5 + gaussian(0, stdDev), min, max),
+      };
+    };
     const sampled: Assumptions = {
       funding: {
         councilTaxIncrease: sampleProfile(assumptions.funding.councilTaxIncrease, 0.7, 0, 10),
@@ -1331,8 +1533,8 @@ export function computeMonteCarlo(
       },
       policy: {
         ...assumptions.policy,
-        annualSavingsTarget: { ...assumptions.policy.annualSavingsTarget },
-        reservesUsage: { ...assumptions.policy.reservesUsage },
+        annualSavingsTarget: normalizeYearProfile(assumptions.policy.annualSavingsTarget),
+        reservesUsage: normalizeYearProfile(assumptions.policy.reservesUsage),
       },
       advanced: assumptions.advanced,
     };

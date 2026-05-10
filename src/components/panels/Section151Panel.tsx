@@ -5,10 +5,16 @@ import {
   Shield, BookOpen, CheckSquare, AlertTriangle, FileText,
   Scale, BarChart3, Clock
 } from 'lucide-react';
+import type { YearProfile5 } from '../../types/financial';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
   return `£${abs >= 1000 ? `${(abs / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m` : `${abs.toLocaleString('en-GB', { maximumFractionDigits: 0 })}k`}`;
+}
+
+function y1(value: YearProfile5 | number): number {
+  if (typeof value === 'number') return value;
+  return Number(value?.y1 ?? 0);
 }
 
 interface AssuranceItemProps {
@@ -96,7 +102,7 @@ export function Section151Panel() {
         ? 'The savings programme represents a realistic proportion of total expenditure. Delivery risk is within acceptable parameters for a medium-term financial strategy.'
         : `The savings target of ${savingsAsBudgetPct.toFixed(1)}% of expenditure exceeds the benchmark threshold of 8%. The S151 Officer should commission a feasibility assessment of the savings programme before presenting the MTFS to Full Council.`,
       status: savingsRealistic ? 'compliant' : 'risk',
-      evidence: `Required savings: ${fmtK(result.requiredSavingsToBalance)}/yr. Savings as % of expenditure: ${savingsAsBudgetPct.toFixed(1)}%. Delivery risk adjustment: ${100 - assumptions.expenditure.savingsDeliveryRisk}%.`,
+      evidence: `Required savings: ${fmtK(result.requiredSavingsToBalance)}/yr. Savings as % of expenditure: ${savingsAsBudgetPct.toFixed(1)}%. Delivery risk adjustment: ${(100 - y1(assumptions.expenditure.savingsDeliveryRisk)).toFixed(1)}%.`,
     },
     {
       icon: <AlertTriangle size={16} />,
@@ -190,17 +196,17 @@ export function Section151Panel() {
         </CardHeader>
         <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-[11px]">
           {[
-            ['Council Tax Increase', `${assumptions.funding.councilTaxIncrease.toFixed(2)}% p.a.`],
-            ['Business Rates Growth', `${assumptions.funding.businessRatesGrowth.toFixed(1)}% p.a.`],
-            ['Grant Variation', `${assumptions.funding.grantVariation > 0 ? '+' : ''}${assumptions.funding.grantVariation.toFixed(1)}% p.a.`],
-            ['Fees & Charges Growth', `${assumptions.funding.feesChargesElasticity.toFixed(1)}% p.a.`],
-            ['Pay Award', `${assumptions.expenditure.payAward.toFixed(1)}% p.a.`],
-            ['Non-Pay Inflation', `${assumptions.expenditure.nonPayInflation.toFixed(1)}% p.a.`],
-            ['ASC Demand Growth', `${assumptions.expenditure.ascDemandGrowth.toFixed(1)}% p.a.`],
-            ['CSC Demand Growth', `${assumptions.expenditure.cscDemandGrowth.toFixed(1)}% p.a.`],
-            ['Savings Delivery Risk', `${assumptions.expenditure.savingsDeliveryRisk.toFixed(0)}% achievement`],
-            ['Annual Savings Target', fmtK(assumptions.policy.annualSavingsTarget)],
-            ['Planned Reserves Use', fmtK(assumptions.policy.reservesUsage)],
+            ['Council Tax Increase', `${y1(assumptions.funding.councilTaxIncrease).toFixed(2)}% p.a. (Y1)`],
+            ['Business Rates Growth', `${y1(assumptions.funding.businessRatesGrowth).toFixed(1)}% p.a. (Y1)`],
+            ['Grant Variation', `${y1(assumptions.funding.grantVariation) > 0 ? '+' : ''}${y1(assumptions.funding.grantVariation).toFixed(1)}% p.a. (Y1)`],
+            ['Fees & Charges Growth', `${y1(assumptions.funding.feesChargesElasticity).toFixed(1)}% p.a. (Y1)`],
+            ['Pay Award', `${y1(assumptions.expenditure.payAward).toFixed(1)}% p.a. (Y1)`],
+            ['Non-Pay Inflation', `${y1(assumptions.expenditure.nonPayInflation).toFixed(1)}% p.a. (Y1)`],
+            ['ASC Demand Growth', `${y1(assumptions.expenditure.ascDemandGrowth).toFixed(1)}% p.a. (Y1)`],
+            ['CSC Demand Growth', `${y1(assumptions.expenditure.cscDemandGrowth).toFixed(1)}% p.a. (Y1)`],
+            ['Savings Delivery Risk', `${y1(assumptions.expenditure.savingsDeliveryRisk).toFixed(0)}% achievement (Y1)`],
+            ['Annual Savings Target', fmtK(y1(assumptions.policy.annualSavingsTarget))],
+            ['Planned Reserves Use', fmtK(y1(assumptions.policy.reservesUsage))],
             ['Real Terms Mode', assumptions.advanced.realTermsToggle ? `Yes (deflator: ${assumptions.advanced.inflationRate}%)` : 'No (nominal)'],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between py-1.5 border-b border-[rgba(99,179,237,0.04)]">

@@ -7,8 +7,8 @@ The app lets users adjust funding, expenditure, policy, and advanced modelling c
 ## What this project does
 
 - Models a 5-year MTFS position from baseline and assumptions.
-- Supports strategic and technical views for different audiences.
-- Provides panel-based workflows across Overview, Baseline, Gap Analysis, Reserves, Savings Programme, Risk & Resilience, High Value, Enhancement, Scenarios, Insights, Technical Detail, S151 Assurance, and Governance.
+- Supports role-based views for different audiences (`Finance` and `Member`).
+- Provides 6 core workflows: Summary, Baseline, Savings, Reserves, Scenarios, and Governance.
 - Captures assumptions history and audit trail of model runs.
 - Saves snapshots locally and supports import/export in JSON and XLSX.
 

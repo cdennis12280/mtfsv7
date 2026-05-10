@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle } from '../ui/Card';
 import { Toggle } from '../ui/SliderControl';
 import { RichTooltip } from '../ui/RichTooltip';
 import type { SavingsProposal, SavingsCategory, RagStatus } from '../../types/financial';
+import { y1 } from '../../utils/yearProfile';
 
 function fmtK(v: number) {
   const abs = Math.abs(v);
@@ -111,6 +112,10 @@ function ProposalRow({ proposal }: { proposal: SavingsProposal }) {
       {/* Expanded detail */}
       {expanded && (
         <div className="px-4 pb-4 pt-1 bg-[rgba(99,179,237,0.02)] space-y-4">
+          <div>
+            <p className="text-[10px] text-[#4a6080] uppercase tracking-widest font-semibold">Proposal Detail</p>
+            <p className="text-[10px] text-[#8ca0c0] mt-1">Set ownership, financial value, delivery status and structural impact for this savings proposal.</p>
+          </div>
           {/* Row 1 */}
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -228,7 +233,8 @@ function ProposalRow({ proposal }: { proposal: SavingsProposal }) {
 
           {/* Slippage modelling */}
           <div className="p-3 rounded-lg bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.18)]">
-            <p className="text-[11px] font-semibold text-[#f0f4ff] mb-2">Savings Slippage Profile</p>
+            <p className="text-[11px] font-semibold text-[#f0f4ff] mb-1">Savings Delivery Assumptions</p>
+            <p className="text-[10px] text-[#8ca0c0] mb-2">Model phasing and slippage for the first three delivery years.</p>
             <div className="grid grid-cols-3 gap-2">
               {([0, 1, 2] as const).map((i) => (
                 <div key={i}>
@@ -299,7 +305,7 @@ function ProposalRow({ proposal }: { proposal: SavingsProposal }) {
 
           {/* Description */}
           <div>
-            <label className="text-[10px] text-[#4a6080] block mb-1">Description / Notes</label>
+            <label className="text-[10px] text-[#4a6080] block mb-1">Savings Assurance</label>
             <textarea
               value={proposal.description}
               onChange={(e) => updateSavingsProposal(proposal.id, { description: e.target.value })}
@@ -334,7 +340,7 @@ export function SavingsProgramme() {
       category: 'efficiency',
       grossValue: 500,
       deliveryYear,
-      achievementRate: assumptions.expenditure.savingsDeliveryRisk,
+      achievementRate: y1(assumptions.expenditure.savingsDeliveryRisk),
       isRecurring: true,
       ragStatus: 'green',
       responsibleOfficer: '',
@@ -415,7 +421,7 @@ export function SavingsProgramme() {
       grossValue: parseNumber(h('grossvalue') ?? h('gross') ?? h('value') ?? h('grossvaluek'), 0),
       deliveryYear,
       achievementRate: clampPct(
-        h('achievementrate') ?? h('achievement') ?? h('deliveryrisk') ?? assumptions.expenditure.savingsDeliveryRisk
+        h('achievementrate') ?? h('achievement') ?? h('deliveryrisk') ?? y1(assumptions.expenditure.savingsDeliveryRisk)
       ),
       isRecurring: parseBool(h('isrecurring') ?? h('recurring'), true),
       ragStatus: parseRag(h('ragstatus') ?? h('rag')),
@@ -615,7 +621,7 @@ export function SavingsProgramme() {
   })).filter((r) => r.count > 0);
 
   return (
-    <div className="space-y-4">
+    <div id="savings-programme" className="space-y-4 scroll-mt-32">
       {/* Info banner */}
       <div className="flex items-start gap-3 p-4 rounded-xl bg-[rgba(59,130,246,0.06)] border border-[rgba(59,130,246,0.15)]">
         <TrendingDown size={16} className="text-[#3b82f6] mt-0.5 shrink-0" />
@@ -683,6 +689,24 @@ export function SavingsProgramme() {
 
       {savingsProposals.length > 0 && (
         <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Service Impact Summary</CardTitle>
+              <span className="text-[10px] text-[#4a6080]">Resident-facing narrative placeholders</span>
+            </CardHeader>
+            <div className="grid gap-2 md:grid-cols-3">
+              {[
+                ['Service continuity', 'Confirm whether proposals protect statutory delivery and critical front-line services.'],
+                ['Resident impact', 'Document where service standards, access, fees, or wait times may change.'],
+                ['CFO questions', 'Which savings are recurring, evidence-backed, owner-assigned, and deliverable by Cabinet?'],
+              ].map(([label, copy]) => (
+                <div key={label} className="rounded-lg border border-[rgba(99,179,237,0.12)] bg-[rgba(99,179,237,0.04)] p-3">
+                  <p className="text-[10px] font-semibold text-[#f0f4ff]">{label}</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#8ca0c0]">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
           {/* Programme summary */}
           <div className="grid grid-cols-4 gap-3">
             {[
@@ -818,7 +842,7 @@ export function SavingsProgramme() {
             Add individual proposals to build your savings programme
           </p>
           <p className="text-[10px] text-[#4a6080]">
-            The model currently uses the policy lever target from the sidebar (£{(assumptions.policy.annualSavingsTarget / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m/yr)
+            The model currently uses the policy lever target from the sidebar (£{(y1(assumptions.policy.annualSavingsTarget) / 1000).toLocaleString('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}m/yr)
           </p>
         </div>
       ) : (
